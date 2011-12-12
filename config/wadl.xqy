@@ -1,11 +1,77 @@
 xquery version "1.0-ml";
 
 import module namespace endpoints="http://marklogic.com/corona/endpoints" at "endpoints.xqy";
+import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/functx-1.0-nodoc-2007-01.xqy";
+
+import module namespace config="http://marklogic.com/corona/index-config" at "../corona/lib/index-config.xqy";
+import module namespace manage="http://marklogic.com/corona/manage" at "../corona/lib/manage.xqy";
 
 declare default function namespace "http://www.w3.org/2005/xpath-functions";
 declare namespace rest="http://marklogic.com/appservices/rest";
+declare namespace json="http://marklogic.com/json";
 
 declare option xdmp:mapping "false";
+
+declare function local:expand-matches($parts as element()*, $prevs as xs:string*)
+	as xs:string*
+{
+    if (exists($parts)) then
+        let $first := $parts[1]
+        let $remainder := $parts[position() > 1]
+        return
+			for $i in if ($first[self::matches]) then $first/match else $first
+			for $p in $prevs
+			return
+				local:expand-matches($remainder, concat($p, $i))
+    else
+		$prevs
+};
+
+
+declare function local:expand-path($uri as xs:string)
+	as xs:string*
+{
+	let $parts :=
+		for $n in functx:get-matches-and-non-matches($uri, "\(((([^|\(\)]+(\([^\(\)]+\)[^|\(\)]*)*)|(\([^\(\)]+\)[^|\(\)]*))\|)+(([^|\(\)]+(\([^\(\)]+\)[^|\(\)]*)*)|(\([^\(\)]+\)[^|\(\)]*))\)")
+		return
+			if ($n[self::match]) then
+				<matches>{
+					for $t in tokenize(substring($n, 2, string-length($n) - 2), '\|')
+					return
+						<match>{$t}</match>
+				}</matches>
+			else
+				$n
+	for $path in 
+        local:expand-matches($parts, "")
+	return
+		if (contains($path, '/range/')) then
+			for $name in config:rangeNames()
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else if (contains($path, '/bucketedrange/')) then
+			for $name in config:bucketedRangeNames()
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else if (contains($path, '/geospatial/')) then
+			for $name in config:geoNames()
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else if (contains($path, '/place/')) then
+			for $name in config:placeNames()
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else if (contains($path, '/transformer/')) then
+			for $name in manage:getAllTransformerNames()
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else if (contains($path, '/namespace/')) then
+			for $name in manage:getAllNamespaces()/json:prefix
+			return
+				replace($path, '\(?\[[^\[\]]+\]\+\)?', $name)
+		else
+			$path
+};
 
 (: The following attempts to adhere to http://www.w3.org/Submission/wadl/, roughly tested with SOAPui 4.0 :)
 
@@ -18,22 +84,23 @@ declare option xdmp:mapping "false";
 		<wadl:resources base="http://{xdmp:get-request-header('HOST')}">{
 		
 			for $action in endpoints:options()/rest:request
-			let $action-name := replace(substring-before(substring-after($action/@endpoint, '/'), '.xqy'), '[^\w\d\-]+', ':')
-			(: TODO: more robust method of making a name (necessary?) :)
+			let $action-name := replace(replace(replace($action/@endpoint, '^/', ''), '\.xq(y)?$', ''), '[^\w\d\-_]+', ':')
+			
+			let $uri := replace(replace(replace($action/@uri, '^\^', ''), '\$$', ''), '/\?$', '')
+			(: TODO: path is derived from uri pattern, should be expanded to all allowed variants.. (can that be calculated?) :)
+			for $path in local:expand-path($uri)
 			return
 			
-			<wadl:resource id="{$action-name}" path="{replace(translate($action/@uri, '^$', ''), '/\?$', '')}">{
+			<wadl:resource id="{$action-name}" path="{$path}">{
 			
-				(: TODO: path is derived from uri pattern, should be expanded to all allowed variants.. (can that be calculated?) :)
 			
 				let $methods :=
 					if ($action/rest:http) then
 						$action/rest:http
 					else
-						<method method="GET"/>
+						<rest:http method="GET"/>
 				for $method in $methods
 				return
-				
 				<wadl:method id="{$action-name}:{$method/@method}" name="{fn:upper-case($method/@method)}">
 					
 					<wadl:request>{
@@ -54,13 +121,20 @@ declare option xdmp:mapping "false";
 					}</wadl:request>
 					
 					<wadl:response status="200">
+						{ (: TODO: returned types differ per uri. JSON is most default, xml sometimes optional, text and binary only when requesting such docs from store? :) }
+						<wadl:representation mediaType="plain/text"/>
+						<wadl:representation mediaType="application/json"/>
 						<wadl:representation mediaType="text/xml" element="xs:anyType"/>
-						<wadl:representation mediaType="plain/text" />
+						<wadl:representation mediaType="application/octet-stream"/>
 					</wadl:response>
 					
 					{
-						(: Check returned mime for JSON.. :)
-						(: TODO: add responses like 400 (bad param), 401 (auth), 404 (not found) (500 too?) :)
+						for $i in (400, 401, 404, 500) (: See common.xqy for details on returned error codes.. :)
+						return
+							<wadl:response status="{$i}" xmlns:corona="http://marklogic.com/corona">
+								<wadl:representation mediaType="application/json"/>
+								<wadl:representation mediaType="text/xml" element="corona:error"/>
+							</wadl:response>
 					}
 					
 				</wadl:method>
