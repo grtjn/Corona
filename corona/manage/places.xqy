@@ -23,6 +23,8 @@ import module namespace json="http://marklogic.com/json" at "../lib/json.xqy";
 import module namespace rest="http://marklogic.com/appservices/rest" at "../lib/rest/rest.xqy";
 import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/config/endpoints.xqy";
 
+import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/functx-1.0-nodoc-2007-01.xqy";
+
 declare namespace corona="http://marklogic.com/corona";
 
 declare option xdmp:mapping "false";
@@ -40,6 +42,7 @@ let $attribute := map:get($params, "attribute")
 let $subPlace := map:get($params, "place")
 let $type := map:get($params, "type")
 let $weight := map:get($params, "weight")
+let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 
 let $name := if(string-length($name)) then $name else () 
 let $scope := if(starts-with($scope, "places")) then "places" else "place"
@@ -48,13 +51,20 @@ let $output :=
     try {
         if($requestMethod = "GET")
         then
-            if($scope = "place" and empty($name))
-            then manage:getPlace(())
-            else if($scope = "places" and empty($name))
-            then json:array(manage:getAllPlaces())
-            else if(exists($name))
-            then manage:getPlace($name)
-            else common:error("corona:INVALID-REQUEST", "Must supply a place name, request all the places or the anonymous place", "json")
+			let $json :=
+				if($scope = "place" and empty($name))
+				then manage:getPlace(())
+				else if($scope = "places" and empty($name))
+				then json:array(manage:getAllPlaces())
+				else if(exists($name))
+				then manage:getPlace($name)
+				else common:error("corona:INVALID-REQUEST", "Must supply a place name, request all the places or the anonymous place", "json")
+			return
+				if ($outputFormat eq 'xml') then
+					<place>{
+						functx:change-element-ns-deep($json, "", "")
+					}</place>
+				else $json
 
         else if($requestMethod = "PUT")
         then 

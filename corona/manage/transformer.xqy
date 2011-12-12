@@ -23,12 +23,15 @@ import module namespace json="http://marklogic.com/json" at "../lib/json.xqy";
 import module namespace rest="http://marklogic.com/appservices/rest" at "../lib/rest/rest.xqy";
 import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/config/endpoints.xqy";
 
+import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/functx-1.0-nodoc-2007-01.xqy";
+
 declare option xdmp:mapping "false";
 
 
 let $params := rest:process-request(endpoints:request("/corona/manage/transformer.xqy"))
 let $requestMethod := xdmp:get-request-method()
 let $name := map:get($params, "name")
+let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 let $bodyContent := xdmp:get-request-body("text")/text()
 
 let $existing := manage:getTransformer($name)
@@ -36,12 +39,19 @@ let $existing := manage:getTransformer($name)
 return common:output(
     if($requestMethod = "GET")
     then
-        if(string-length($name))
-        then
-            if(exists($existing))
-            then $existing
-            else common:error("corona:TRANSFORMER-NOT-FOUND", "Transformer not found", "json")
-        else json:array(manage:getAllTransformerNames())
+		let $json :=
+			if(string-length($name))
+			then
+				if(exists($existing))
+				then $existing
+				else common:error("corona:TRANSFORMER-NOT-FOUND", "Transformer not found", "json")
+			else json:array(manage:getAllTransformerNames())
+		return
+			if ($outputFormat eq 'xml') then
+				<transformer>{
+					functx:change-element-ns-deep($json, "", "")
+				}</transformer>
+			else $json
 
     else if($requestMethod = "PUT")
     then

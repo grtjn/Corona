@@ -24,12 +24,18 @@ import module namespace manage="http://marklogic.com/corona/manage" at "../lib/m
 import module namespace const="http://marklogic.com/corona/constants" at "../lib/constants.xqy";
 import module namespace admin = "http://marklogic.com/xdmp/admin" at "/MarkLogic/admin.xqy";
 
+import module namespace rest="http://marklogic.com/appservices/rest" at "../lib/rest/rest.xqy";
+import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/config/endpoints.xqy";
+import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/functx-1.0-nodoc-2007-01.xqy";
+
 declare option xdmp:mapping "false";
 
 let $config := admin:get-configuration()
 let $database := xdmp:database()
 
+let $params := rest:process-request(endpoints:request("/corona/manage/summary.xqy"))
 let $requestMethod := xdmp:get-request-method()
+let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 let $numJSONDocs := xdmp:estimate(/json:json)
 let $numTextDocs := xdmp:estimate(doc()/text())
 let $numBinaryDocs := xdmp:estimate(doc()/binary())
@@ -37,7 +43,9 @@ let $numXMLDocs := xdmp:estimate(/*) - $numJSONDocs
 
 return common:output(
     if($requestMethod = "GET")
-    then json:document(
+    then
+		let $json :=
+	json:document(
         json:object((
             "isManaged", manage:isManaged(),
             "features", json:object((
@@ -83,6 +91,13 @@ return common:output(
             "xmlNamespaces", json:array(manage:getAllNamespaces())
         ))
     )
+	return
+		if ($outputFormat eq 'xml')
+		then
+			<manage>{
+				functx:change-element-ns-deep($json, "", "")/*
+			}</manage>
+		else $json
     else if($requestMethod = "DELETE")
     then (
             manage:deleteAllRanges(),

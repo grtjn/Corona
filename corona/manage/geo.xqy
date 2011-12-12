@@ -24,11 +24,14 @@ import module namespace rest="http://marklogic.com/appservices/rest" at "../lib/
 import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/config/endpoints.xqy";
 import module namespace admin = "http://marklogic.com/xdmp/admin" at "/MarkLogic/admin.xqy";
 
+import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/functx-1.0-nodoc-2007-01.xqy";
+
 declare option xdmp:mapping "false";
 
 
 let $params := rest:process-request(endpoints:request("/corona/manage/geo.xqy"))
 let $name := map:get($params, "name")
+let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 let $requestMethod := xdmp:get-request-method()
 
 let $config := admin:get-configuration()
@@ -37,12 +40,19 @@ let $existing := manage:getGeo($name)
 return common:output(
     if($requestMethod = "GET")
     then
-        if(string-length($name))
-        then
-            if(exists($existing))
-            then $existing
-            else common:error("corona:GEO-INDEX-NOT-FOUND", "Geospatial index not found", "json")
-        else json:array(manage:getAllGeos())
+		let $json :=
+			if(string-length($name))
+			then
+				if(exists($existing))
+				then $existing
+				else common:error("corona:GEO-INDEX-NOT-FOUND", "Geospatial index not found", "json")
+			else json:array(manage:getAllGeos())
+		return
+			if ($outputFormat eq 'xml') then
+				<geo>{
+					functx:change-element-ns-deep($json, "", "")
+				}</geo>
+			else $json
 
     else if($requestMethod = "POST")
     then
