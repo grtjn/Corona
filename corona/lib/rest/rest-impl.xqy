@@ -5,6 +5,7 @@ module namespace rest-impl="http://marklogic.com/appservices/rest-impl";
 declare default function namespace "http://www.w3.org/2005/xpath-functions";
 
 declare namespace rest="http://marklogic.com/appservices/rest";
+declare namespace error="http://marklogic.com/xdmp/error";
 
 declare option xdmp:mapping "false";
 
@@ -30,6 +31,8 @@ declare variable $rest-impl:REPEATEDPARAM     := xs:QName("rest:REPEATEDPARAM");
 declare variable $rest-impl:REQUIREDPARAM     := xs:QName("rest:REQUIREDPARAM");
 declare variable $rest-impl:INVALIDCONDITION  := xs:QName("rest:INVALIDCONDITION");
 declare variable $rest-impl:FAILEDCONDITION   := xs:QName("rest:FAILEDCONDITION");
+
+declare variable $rest-impl:NOMATCHINGREQUEST := xs:QName("rest:NOMATCHINGREQUEST");
 
 (: ====================================================================== :)
 (: These functions are a bit of an odd hack; in the versions of this
@@ -143,6 +146,7 @@ declare function rest-impl:matching-request(
   then
     rest-impl:log("Out of requests: rewrite returns empty sequence")
   else
+(:
     let $trace   := rest-impl:log(("==> Matches request:", $requests[1]))
     let $matches := rest-impl:matches($requests[1], $reqenv, false(), false())
     let $trace   := rest-impl:log((concat("==> ",exists($matches)),""))
@@ -152,6 +156,63 @@ declare function rest-impl:matching-request(
         ($requests[1], $matches)
       else
         rest-impl:matching-request($requests[position()>1], $reqenv)
+:)
+    let $matches := (
+		for $request in $requests
+		let $trace   := rest-impl:log(("==> Matches request:", $request))
+		let $match :=
+			try {
+				rest-impl:matches($request, $reqenv, true(), false())
+			} catch ($e) {
+				$e
+			}
+		let $trace   := rest-impl:log((concat("==> ",not($match instance of element(error:error)),"")))
+		return
+			<match>{
+				$request,
+				$match
+			}</match>
+	)
+	let $errors := $matches[*[2] instance of element(error:error)]
+	let $matches := $matches[not(*[2] instance of element(error:error))]
+    return
+	  if (exists($matches))
+	  then
+        ($matches[1]/*)
+	  else
+		let $mime-errors := $errors[contains(error:error/error:name, string($rest-impl:UNACCEPTABLETYPE))]
+		let $extra-param-errors := $errors[contains(error:error/error:name, string($rest-impl:UNSUPPORTEDPARAM))]
+		let $type-errors := $errors[contains(error:error/error:name, string($rest-impl:INVALIDTYPE))]
+		let $uri-errors := $errors[contains(error:error/error:name, string($rest-impl:INCORRECTURI))]
+		let $method-errors := $errors[contains(error:error/error:name, string($rest-impl:UNSUPPORTEDMETHOD))]
+		let $user-param-errors := $errors[contains(error:error/error:name, string($rest-impl:INVALIDPARAM))]
+		let $repeated-param-errors := $errors[contains(error:error/error:name, string($rest-impl:REPEATEDPARAM))]
+		let $required-param-errors := $errors[contains(error:error/error:name, string($rest-impl:REQUIREDPARAM))]
+		let $wrong-condition-errors := $errors[contains(error:error/error:name, string($rest-impl:INVALIDCONDITION))]
+		let $failed-condition-errors := $errors[contains(error:error/error:name, string($rest-impl:FAILEDCONDITION))]
+		return
+			if (count($uri-errors) eq count($errors)) then
+				rest-impl:no-match(true(), $rest-impl:INCORRECTURI,
+									concat("Request matched none of the known endpoint uris: ", string-join(for $e in $errors return $e//error:message/replace(replace(substring-after(., " match "), "^\^", ""), "\$$", ""), ", ")))
+			else
+			if (count($method-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:UNSUPPORTEDMETHOD,
+									concat("Matched endpoint does not support method ", $method-errors[1]//error:message/substring-after(., " "), ", but only: ", string-join(for $e in $method-errors return $e//rest:http/@method, ", ")))
+			else
+			if (count($extra-param-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:UNSUPPORTEDPARAM,
+									concat("Superfluous parameter(s): ", string-join(for $e in $extra-param-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
+			if (count($required-param-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:REQUIREDPARAM,
+									concat("Missing required parameter(s): ", string-join(for $e in $required-param-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
+			if (count($type-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:INVALIDTYPE,
+									concat("Invalid parameter type(s), cannot cast: ", string-join(for $e in $type-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
+				rest-impl:no-match(true(), $rest-impl:NOMATCHINGREQUEST,
+									string-join($errors//error:message, ", "))
 };
 
 (: ====================================================================== :)

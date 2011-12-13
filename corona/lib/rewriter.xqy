@@ -24,6 +24,7 @@ declare default function namespace "http://www.w3.org/2005/xpath-functions";
 declare option xdmp:mapping "false";
 
 let $url := xdmp:get-request-url()
+(:
 let $result := rest:rewrite(endpoints:options())
 return
     if(exists($result))
@@ -31,3 +32,9 @@ return
     else if(starts-with($url, "/test") or starts-with($url, "/corona/htools/"))
     then $url
     else concat("/corona/misc/404.xqy?", substring-after(xdmp:get-request-url(), "?"))
+:)
+return
+	if(starts-with($url, "/test") or starts-with($url, "/corona/htools/"))
+    then $url
+    else 
+		rest:rewrite(endpoints:options())
