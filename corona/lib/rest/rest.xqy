@@ -28,7 +28,7 @@ declare function rest:rewrite(
 {
   let $reqenv := rest:request-environment()
   return
-    rest-impl:rewrite($options/rest:request, rest:request-environment())
+    rest-impl:rewrite($options/rest:request, $reqenv)
 };
 
 declare function rest:rewrite(

@@ -25,8 +25,8 @@ import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/c
 declare option xdmp:mapping "false";
 
 
-let $params := rest:process-request(endpoints:request("/corona/manage/state.xqy"))
 let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/manage/state.xqy"), $requestMethod)
 let $isManaged := map:get($params, "isManaged")
 
 let $set := xdmp:set-response-code(204, "State saved")

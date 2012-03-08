@@ -52,8 +52,9 @@ declare function local:expand-path($uri as xs:string)
 };
 
 
-let $params := rest:process-request(endpoints:request("/config/explore.xqy"))
-let $page := max((map:get($params, "page"), 0))
+let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/config/explore.xqy"), $requestMethod)
+let $page := max((map:get($params, "page"), 1))
 
 let $numDocs := xdmp:estimate(doc())
 let $numJSONDocs := xdmp:estimate(/json:json)
@@ -64,8 +65,8 @@ let $numXMLDocs := xdmp:estimate(/*) - $numJSONDocs
 let $page-size := 20
 let $max-page := $numDocs div $page-size
 
-let $start := $page * $page-size
-let $end := ($page + 1) * $page-size - 1
+let $start := ($page - 1) * $page-size
+let $end := $page * $page-size - 1
 
 return
 
@@ -79,7 +80,7 @@ template:apply(
 			<div>Bin docs : {$numBinaryDocs}</div>
 		</div>
 		<div>
-			{ if ($page gt 0) then <a href="?page={$page - 1}">prev</a> else () }
+			{ if ($page gt 1) then <a href="?page={$page - 1}">prev</a> else () }
 			<ul>{
 				for $uri in cts:uris()[$start to $end]
 				return
@@ -95,9 +96,10 @@ template:apply(
 	let $action-name := replace(replace(replace($action/@endpoint, '^/', ''), '\.xq(y)?$', ''), '[^\w\d\-_]+', ':')
 	let $uri := replace(replace(replace($action/@uri, '^\^', ''), '\$$', ''), '/\?$', '')
 		for $path in distinct-values(local:expand-path($uri))
+		let $path := if ($path eq '') then '/' else $path
 		where $action[empty(rest:http) or rest:http[@method eq 'GET']] and not(matches($path, '\(?\[[^\[\]]+\]\+\)?'))
 		return
-			<li><a href="{$path}?outputFormat=xml" target="{if ($path = ('', '/explore')) then '' else '_blank'}">{if ($path eq '') then '/' else $path}</a></li>,
+			<li><a href="{$path}?outputFormat=xml" target="{if ($path = ('/', '/explore')) then '' else '_blank'}">{$path}</a></li>,
 	
 	$page,
 	

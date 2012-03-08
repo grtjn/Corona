@@ -33,8 +33,8 @@ declare option xdmp:mapping "false";
 let $config := admin:get-configuration()
 let $database := xdmp:database()
 
-let $params := rest:process-request(endpoints:request("/corona/manage/summary.xqy"))
 let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/manage/summary.xqy", $requestMethod))
 let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 let $numJSONDocs := xdmp:estimate(/json:json)
 let $numTextDocs := xdmp:estimate(doc()/text())

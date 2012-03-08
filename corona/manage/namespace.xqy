@@ -28,11 +28,11 @@ import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/fun
 declare option xdmp:mapping "false";
 
 
-let $params := rest:process-request(endpoints:request("/corona/manage/namespace.xqy"))
+let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/manage/namespace.xqy"), $requestMethod)
 let $prefix := map:get($params, "prefix")
 let $uri := map:get($params, "uri")
 let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
-let $requestMethod := xdmp:get-request-method()
 
 let $existing := manage:getNamespaceURI($prefix)
 

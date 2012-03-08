@@ -29,7 +29,8 @@ import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/c
 
 declare option xdmp:mapping "false";
 
-let $params := rest:process-request(endpoints:request("/corona/kvquery.xqy"))
+let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/kvquery.xqy"), $requestMethod)
 
 
 let $key := map:get($params, "key")

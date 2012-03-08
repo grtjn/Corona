@@ -120,20 +120,39 @@ declare function local:expand-path($uri as xs:string)
 							(: TODO: other relevant attribs for params? :)
 					}</wadl:request>
 					
-					<wadl:response status="200">
-						{ (: TODO: returned types differ per uri. JSON is most default, xml sometimes optional, text and binary only when requesting such docs from store? :) }
-						<wadl:representation mediaType="plain/text"/>
-						<wadl:representation mediaType="application/json"/>
-						<wadl:representation mediaType="text/xml" element="xs:anyType"/>
-						<wadl:representation mediaType="application/octet-stream"/>
+					<wadl:response status="{ if (fn:upper-case($method/@method) = ('PUT', 'DELETE')) then 204 else 200}">
+						{
+							(: TODO: returned types differ per uri. JSON is most default, xml sometimes optional, text and binary only when requesting such docs from store? :)
+
+							if ($path = ('', '/explore', '/config/setup')) then
+								<wadl:representation mediaType="text/html"/>
+							else
+							if ($path = ('/wadl', '/soapui')) then
+								<wadl:representation mediaType="text/xml"/>
+							else (
+								<wadl:representation mediaType="application/json"/>,
+								if ($action/rest:param[@name = 'outputFormat'] or contains($path, '/store')) then
+									<wadl:representation mediaType="text/xml" element="xs:anyType"/>
+								else ()
+							),
+
+							if (contains($path, '/store')) then (
+								<wadl:representation mediaType="plain/text"/>,
+								<wadl:representation mediaType="application/octet-stream"/>
+							) else ()
+						}
 					</wadl:response>
 					
 					{
-						for $i in (400, 401, 404, 500) (: See common.xqy for details on returned error codes.. :)
+						for $i in (400, 404, 500) (: See common.xqy for details on returned error codes.. :)
 						return
 							<wadl:response status="{$i}" xmlns:corona="http://marklogic.com/corona">
 								<wadl:representation mediaType="application/json"/>
-								<wadl:representation mediaType="text/xml" element="corona:error"/>
+								{
+									if ($action/rest:param[@name = 'outputFormat']) then
+										<wadl:representation mediaType="text/xml" element="corona:error"/>
+									else ()
+								}
 							</wadl:response>
 					}
 					

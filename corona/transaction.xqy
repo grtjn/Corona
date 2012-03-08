@@ -53,9 +53,9 @@ declare function local:generateTransactionStatus(
 };
 
 
-let $params := rest:process-request(endpoints:request("/corona/transaction.xqy"))
-
 let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/transaction.xqy"), $requestMethod)
+
 let $action := map:get($params, "action")
 let $txid := map:get($params, "txid")
 let $outputFormat := common:getOutputFormat((), map:get($params, "outputFormat"))

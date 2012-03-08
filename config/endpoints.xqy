@@ -15,7 +15,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
 	</request>
 	
     <request uri="^/explore/?$" endpoint="/config/explore.xqy" user-params="allow">
-        <param name="page" as="integer" required="false"/>
+        <param name="page" as="integer" required="true" default="1"/>
         <http method="GET"/>
 	</request>
 	
@@ -27,7 +27,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="extractPath" required="false"/>
         <param name="applyTransform" required="false"/>
         <param name="include" alias="include[]" repeatable="true" required="false" default="content"/>
-        <param name="outputFormat" required="false" values="json|xml"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
     </request>
 
     <request uri="^/store/?$" endpoint="/corona/store.xqy">
@@ -40,7 +40,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
             <param name="extractPath" required="false"/>
             <param name="applyTransform" required="false"/>
             <param name="include" alias="include[]" repeatable="true" required="false" default="content"/>
-            <param name="outputFormat" required="false" values="json|xml"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
         </http-->
         <http method="POST">
             <param name="contentType" required="false" values="json|xml|text|binary"/>
@@ -75,7 +75,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
             <param name="bulkDelete" required="false" as="boolean" default="false"/>
             <param name="include" alias="include[]" repeatable="true" required="false"/>
             <param name="limit" required="false" as="integer"/>
-            <param name="outputFormat" required="false" values="json|xml"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
         </http>
     </request>
 
@@ -93,9 +93,9 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="collection" alias="collection[]" required="false" repeatable="true"/>
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
-        <param name="outputFormat" required="false" values="json|xml"/>
-        <http method="POST"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
         <http method="GET"/>
+        <http method="POST"/>
     </request>
 
     <!-- Key value queryies -->
@@ -114,9 +114,9 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="collection" alias="collection[]" required="false" repeatable="true"/>
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
-        <param name="outputFormat" required="false" values="json|xml"/>
-        <http method="POST"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
         <http method="GET"/>
+        <http method="POST"/>
     </request>
 
     <!-- Facets -->
@@ -132,30 +132,24 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="collection" alias="collection[]" required="false" repeatable="true"/>
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
-        <param name="outputFormat" required="false"  values="xml|json"/>
-        <http method="POST"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
         <http method="GET"/>
+        <http method="POST"/>
     </request>
 
     <!-- Transaction management -->
-    <request uri="^/transaction/status/?$" endpoint="/corona/transaction.xqy">
+    <request uri="^/transaction/(status|create|commit|rollback)/?$" endpoint="/corona/transaction.xqy">
         <uri-param name="action">$1</uri-param>
         <param name="txid" required="false"/>
-        <param name="outputFormat" required="false" values="xml|json"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
         <param name="timeLimit" required="false" as="decimal"/>
         <http method="GET"/>
-    </request>
-    <request uri="^/transaction/(create|commit|rollback)/?$" endpoint="/corona/transaction.xqy">
-        <uri-param name="action">$1</uri-param>
-        <param name="txid" required="false"/>
-        <param name="outputFormat" required="false" values="xml|json"/>
-        <param name="timeLimit" required="false" as="decimal"/>
         <http method="POST"/>
     </request>
 
     <!-- Named query management -->
     <request uri="^/namedquery/?$" endpoint="/corona/named-query.xqy">
-        <param name="outputFormat" required="false"  values="xml|json"/>
+        <param name="outputFormat" required="false" values="json|xml" default="json"/>
         <http method="GET">
             <param name="name" required="false"/>
             <param name="property" required="false"/>
@@ -183,7 +177,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
 
     <request uri="^/manage/?$" endpoint="/corona/manage/summary.xqy" user-params="ignore">
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="DELETE"/>
     </request>
@@ -197,7 +191,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     <request uri="^/manage/(ranges|range/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/range.xqy">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="POST">
             <param name="key" required="false"/>
@@ -212,7 +206,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     <request uri="^/manage/(bucketedranges|bucketedrange/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/bucketedrange.xqy">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="POST">
             <param name="key" required="false"/>
@@ -234,7 +228,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     <request uri="^/manage/(geospatials|geospatial/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/geo.xqy">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="POST">
             <param name="key" required="false"/>
@@ -256,7 +250,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     <request uri="^/manage/(namespaces|namespace/([^/]+))/?$" endpoint="/corona/manage/namespace.xqy">
         <uri-param name="prefix" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="POST">
             <param name="uri" required="true"/>
@@ -267,7 +261,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     <request uri="^/manage/(transformers|transformer/([^/]+))/?$" endpoint="/corona/manage/transformer.xqy">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="PUT"/>
         <http method="DELETE"/>
@@ -277,7 +271,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <uri-param name="scope" as="string">$1</uri-param>
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
-			<param name="outputFormat" required="false" values="xml|json"/>
+			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="PUT">
             <param name="mode" required="false" default="textContains"/>
@@ -304,9 +298,12 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="POST"/>
     </request>
 
-    <request uri="^/wadl/?$" endpoint="/config/wadl.xqy" user-params="allow">
+    <request uri="^/wadl/?$" endpoint="/config/wadl.xqy">
         <http method="GET"/>
-        <http method="POST"/>
+    </request>
+
+    <request uri="^/soapui/?$" endpoint="/config/soapui.xqy">
+        <http method="GET"/>
     </request>
 
 </options>;
@@ -318,8 +315,9 @@ declare function endpoints:options(
 };
 
 declare function endpoints:request(
-    $module as xs:string
+    $module as xs:string,
+	$method as xs:string
 ) as element(rest:request)?
 {
-    ($ENDPOINTS/rest:request[@endpoint = $module])[1]
+    ($ENDPOINTS/rest:request[@endpoint = $module][(empty(rest:http) and ($method eq 'GET')) or ($method eq rest:http/@method)])[1]
 };

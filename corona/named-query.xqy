@@ -30,9 +30,9 @@ declare namespace hs="http://marklogic.com/xdmp/status/host";
 declare option xdmp:mapping "false";
 
 
-let $params := rest:process-request(endpoints:request("/corona/named-query.xqy"))
-
 let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/named-query.xqy"), $requestMethod)
+
 let $name := map:get($params, "name")
 let $stringQuery := map:get($params, "stringQuery")
 let $structuredQuery := map:get($params, "structuredQuery")

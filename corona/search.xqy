@@ -28,7 +28,8 @@ import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/c
 
 declare option xdmp:mapping "false";
 
-let $params := rest:process-request(endpoints:request("/corona/search.xqy"))
+let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/search.xqy"), $requestMethod)
 
 let $stringQuery := map:get($params, "stringQuery")
 let $structuredQuery := map:get($params, "structuredQuery")

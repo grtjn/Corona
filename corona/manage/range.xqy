@@ -29,10 +29,10 @@ import module namespace functx="http://www.functx.com" at "/MarkLogic/functx/fun
 declare option xdmp:mapping "false";
 
 
-let $params := rest:process-request(endpoints:request("/corona/manage/range.xqy"))
+let $requestMethod := xdmp:get-request-method()
+let $params := rest:process-request(endpoints:request("/corona/manage/range.xqy"), $requestMethod)
 let $name := map:get($params, "name")
 let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
-let $requestMethod := xdmp:get-request-method()
 
 let $config := admin:get-configuration()
 let $existing := manage:getRange($name)

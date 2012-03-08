@@ -64,7 +64,7 @@ declare function local:queryFromRequest(
 };
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/store.xqy"))
+let $params := rest:process-request(endpoints:request("/corona/store.xqy"), $requestMethod)
 let $uri := map:get($params, "uri")
 let $txid := map:get($params, "txid")
 let $outputFormat := common:getOutputFormat((), map:get($params, "outputFormat"))

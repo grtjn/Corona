@@ -178,7 +178,7 @@ declare function rest-impl:matching-request(
     return
 	  if (exists($matches))
 	  then
-        ($matches[1]/*)
+        ($matches[1]/*[1], map:map($matches[1]/*[2]))
 	  else
 		let $mime-errors := $errors[contains(error:error/error:name, string($rest-impl:UNACCEPTABLETYPE))]
 		let $extra-param-errors := $errors[contains(error:error/error:name, string($rest-impl:UNSUPPORTEDPARAM))]
@@ -191,6 +191,18 @@ declare function rest-impl:matching-request(
 		let $wrong-condition-errors := $errors[contains(error:error/error:name, string($rest-impl:INVALIDCONDITION))]
 		let $failed-condition-errors := $errors[contains(error:error/error:name, string($rest-impl:FAILEDCONDITION))]
 		return
+			if (count($type-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:INVALIDTYPE,
+									concat("Invalid parameter type(s), cannot cast: ", string-join(for $e in $type-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
+			if (count($required-param-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:REQUIREDPARAM,
+									concat("Missing required parameter(s): ", string-join(for $e in $required-param-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
+			if (count($extra-param-errors) gt 0) then
+				rest-impl:no-match(true(), $rest-impl:UNSUPPORTEDPARAM,
+									concat("Superfluous parameter(s): ", string-join(for $e in $extra-param-errors return $e//error:message/substring-after(., " "), ", ")))
+			else
 			if (count($uri-errors) eq count($errors)) then
 				rest-impl:no-match(true(), $rest-impl:INCORRECTURI,
 									concat("Request matched none of the known endpoint uris: ", string-join(for $e in $errors return $e//error:message/replace(replace(substring-after(., " match "), "^\^", ""), "\$$", ""), ", ")))
@@ -198,18 +210,6 @@ declare function rest-impl:matching-request(
 			if (count($method-errors) gt 0) then
 				rest-impl:no-match(true(), $rest-impl:UNSUPPORTEDMETHOD,
 									concat("Matched endpoint does not support method ", $method-errors[1]//error:message/substring-after(., " "), ", but only: ", string-join(for $e in $method-errors return $e//rest:http/@method, ", ")))
-			else
-			if (count($extra-param-errors) gt 0) then
-				rest-impl:no-match(true(), $rest-impl:UNSUPPORTEDPARAM,
-									concat("Superfluous parameter(s): ", string-join(for $e in $extra-param-errors return $e//error:message/substring-after(., " "), ", ")))
-			else
-			if (count($required-param-errors) gt 0) then
-				rest-impl:no-match(true(), $rest-impl:REQUIREDPARAM,
-									concat("Missing required parameter(s): ", string-join(for $e in $required-param-errors return $e//error:message/substring-after(., " "), ", ")))
-			else
-			if (count($type-errors) gt 0) then
-				rest-impl:no-match(true(), $rest-impl:INVALIDTYPE,
-									concat("Invalid parameter type(s), cannot cast: ", string-join(for $e in $type-errors return $e//error:message/substring-after(., " "), ", ")))
 			else
 				rest-impl:no-match(true(), $rest-impl:NOMATCHINGREQUEST,
 									string-join($errors//error:message, ", "))

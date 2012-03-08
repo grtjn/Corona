@@ -42,44 +42,50 @@ declare function common:error(
     $outputFormat as xs:string
 )
 {
+	(: Here a good ref: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html :)
     let $isA400 := (
         "corona:DUPLICATE-INDEX-NAME",
         "corona:DUPLICATE-PLACE-ITEM",
-        "corona:REQUIRES-BULK-DELETE"
+        "corona:REQUIRES-BULK-DELETE",
+        "corona:UNSUPPORTED-METHOD" (: this is actually a 405, but then you should also add an Allow response header :)
     )
     let $isA500 := (
-        "corona:UNSUPPORTED-METHOD",
+        "corona:INVALID-PERMISSION",
         "corona:INTERNAL-ERROR"
     )
     let $statusCode :=
-        if(starts-with($exceptionCode, "corona:INVALID-") or starts-with($exceptionCode, "corona:MISSING-") or $exceptionCode = $isA400)
+        if($exceptionCode = $isA400)
+        then 400
+        else if($exceptionCode = $isA500)
+        then 500
+        else if(starts-with($exceptionCode, "corona:INVALID-") or starts-with($exceptionCode, "corona:MISSING-"))
         then 400
         else if(ends-with($exceptionCode, "-NOT-FOUND"))
         then 404
-        else if($exceptionCode = $isA500)
-        then 500
+        else if(ends-with($exceptionCode, "-EXISTS"))
+        then 409
         else 400
 
     let $set := xdmp:set-response-code($statusCode, $message)
     let $add := xdmp:add-response-header("Date", string(current-dateTime()))
     return
-        if($outputFormat = "xml")
-        then
-            <corona:error>
-                <corona:status>{ $statusCode }</corona:status>
-                <corona:code>{ $exceptionCode }</corona:code>
-                <corona:message>{ $message }</corona:message>
-            </corona:error>
-        else
-            json:document(
-                json:object((
-                    "error", json:object((
-                        "status", $statusCode,
-                        "code", $exceptionCode,
-                        "message", $message
-                    ))
-                ))
-            )
+			if($outputFormat = "xml")
+			then
+				<corona:error>
+					<corona:status>{ $statusCode }</corona:status>
+					<corona:code>{ $exceptionCode }</corona:code>
+					<corona:message>{ $message }</corona:message>
+				</corona:error>
+			else
+				json:document(
+					json:object((
+						"error", json:object((
+							"status", $statusCode,
+							"code", $exceptionCode,
+							"message", $message
+						))
+					))
+				)
 };
 
 declare function common:errorFromException(
@@ -89,7 +95,7 @@ declare function common:errorFromException(
 {
     if($exception/*:code = "SEC-ROLEDNE")
     then common:error("corona:INVALID-PERMISSION", concat("The role '", $exception/*:data/*:datum[. != "sec:role-name"], "' does not exist."), $outputFormat)
-    else if(starts-with($exception/*:name, "corona:") or starts-with($exception/*:name, "json:") or starts-with($exception/*:name, "path:"))
+    else if(starts-with($exception/*:name, "corona:") or starts-with($exception/*:name, "json:") or starts-with($exception/*:name, "path:") or starts-with($exception/*:name, "rest:"))
     then common:error($exception/*:name, $exception/*:message, $outputFormat)
     else (
         xdmp:log($exception),
@@ -125,7 +131,7 @@ declare function common:output(
         else "application/octet-stream"
     let $set := xdmp:set-response-content-type($contentType)
     return
-        if(namespace-uri($item) = "http://marklogic.com/json")
+        if($contentType = "application/json")
         then json:serialize($item)
         else $item
 };
