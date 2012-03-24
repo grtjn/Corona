@@ -29,7 +29,7 @@ import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/c
 declare option xdmp:mapping "false";
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/search.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/search.xqy", $requestMethod))
 
 let $stringQuery := map:get($params, "stringQuery")
 let $structuredQuery := map:get($params, "structuredQuery")
@@ -91,14 +91,18 @@ let $query := cts:and-query((
     return cts:directory-query($directory)
 ))
 
+let $log := common:log("Search", "Generated query", $query)
+
 let $options :=
     if($filtered)
     then "filtered"
     else "unfiltered"
 
+let $log := common:log("Search", "Search options", $options)
+
 let $end := $start + $length - 1
 
-let $results := cts:search(doc(), $query, $options)[$start to $end]
+let $results := cts:search(doc(), $query, $options, map:get($params, "qualityWeight"))[$start to $end]
 
 let $total :=
     if(exists($results[1]))
@@ -110,9 +114,16 @@ let $end :=
     then $total
     else $end
 
+let $highlightQuery :=
+    if(exists($structuredQueryJSON) and structquery:containsNamedQuery($structuredQueryJSON))
+    then structquery:getCTS($structuredQueryJSON, (), false())
+    else if(exists($stringQuery) and stringquery:containsNamedQuery($stringQuery))
+    then stringquery:parse($stringQuery, (), false())
+    else $query
+
 let $results :=
     try {
-        store:outputMultipleDocuments($results, $start, $end, $total, $include, $query, $extractPath, $applyTransform, $outputFormat)
+        store:outputMultipleDocuments($results, $start, $end, $total, $include, $query, $extractPath, $applyTransform, $params, $outputFormat)
     }
     catch ($e) {
         xdmp:set($errors, common:errorFromException($e, $outputFormat))

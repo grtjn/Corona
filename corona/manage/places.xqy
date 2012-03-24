@@ -31,7 +31,7 @@ declare option xdmp:mapping "false";
 
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/manage/places.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/manage/places.xqy", $requestMethod))
 let $scope := map:get($params, "scope")
 let $name := map:get($params, "name")
 let $mode := map:get($params, "mode")

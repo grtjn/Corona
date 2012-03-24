@@ -53,7 +53,7 @@ declare function local:expand-path($uri as xs:string)
 
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/config/explore.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/config/explore.xqy", $requestMethod))
 let $page := max((map:get($params, "page"), 1))
 
 let $numDocs := xdmp:estimate(doc())

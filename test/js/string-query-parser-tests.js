@@ -7,6 +7,18 @@ corona.wordQueryValue = function(word) {
     return '<cts:element-word-query weight="10"> <cts:element xmlns:json="http://marklogic.com/json">json:subject</cts:element> <cts:text xml:lang="en">' + word + '</cts:text> </cts:element-word-query> <cts:element-word-query weight="8"> <cts:element xmlns:testns="http://test.ns/uri">testns:subject</cts:element> <cts:text xml:lang="en">' + word + '</cts:text> </cts:element-word-query> <cts:element-attribute-word-query weight="8"> <cts:element xmlns:testns="http://test.ns/uri">testns:subject</cts:element> <cts:attribute>normalized</cts:attribute> <cts:text xml:lang="en">' + word + '</cts:text> </cts:element-attribute-word-query> <cts:element-word-query weight="10"> <cts:element xmlns:json="http://marklogic.com/json">json:tri_003Dck_007Cey</cts:element> <cts:text xml:lang="en">' + word + '</cts:text> </cts:element-word-query>';
 };
 
+corona.addTimeZone = function(d) {
+	var offset = (new Date()).getTimezoneOffset();
+	var sign = (offset > 0 ? "-" : "+");
+	if (offset < 0) offset = -offset;
+	var hours = (offset / 60);
+	if (hours < 10) hours = "0"+hours;
+	var mins = (offset % 60);
+	if (mins < 10) mins = "0"+mins;
+	var timezone = sign + hours + ":" + mins;
+	return d + timezone;
+};
+
 corona.queries = [
     {
         "query": 'foo',
@@ -60,17 +72,17 @@ corona.queries = [
     },
     {
         "query": 'range1:2007-01-25',
-        "result": '<cts:element-attribute-range-query operator="=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">2007-01-25T00:00:00-07:00</cts:value></cts:element-attribute-range-query>',
+        "result": '<cts:element-attribute-range-query operator="=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('2007-01-25T00:00:00') + '</cts:value></cts:element-attribute-range-query>',
         "purpose": "Date range constraint"
     },
     {
         "query": 'range1-after:2007-01-25',
-        "result": '<cts:element-attribute-range-query operator="&gt;=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">2007-01-25T00:00:00-07:00</cts:value></cts:element-attribute-range-query>',
+        "result": '<cts:element-attribute-range-query operator="&gt;=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('2007-01-25T00:00:00') + '</cts:value></cts:element-attribute-range-query>',
         "purpose": "Date after range constraint"
     },
     {
         "query": 'range1-before:2007-01-25',
-        "result": '<cts:element-attribute-range-query operator="&lt;=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">2007-01-25T00:00:00-07:00</cts:value></cts:element-attribute-range-query>',
+        "result": '<cts:element-attribute-range-query operator="&lt;=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('2007-01-25T00:00:00') + '</cts:value></cts:element-attribute-range-query>',
         "purpose": "Date before range constraint"
     },
     {
@@ -127,6 +139,11 @@ corona.queries = [
         "query": 'geokey:"37.819722, -122.478611"',
         "result": '<cts:element-geospatial-query xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:latLongKey</cts:element> <cts:region xsi:type="cts:circle" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">@10 37.819721,-122.47861</cts:region> <cts:option>coordinate-system=wgs84</cts:option></cts:element-geospatial-query>',
         "purpose": "Quoted gespatial query"
+    },
+    {
+        "query": 'zip:94402',
+        "result": '<cts:element-geospatial-query xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:latLongKey</cts:element> <cts:region xsi:type="cts:point" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">37.554167,-122.31306</cts:region> <cts:option>coordinate-system=wgs84</cts:option></cts:element-geospatial-query>',
+        "purpose": "Stored query"
     }
 ];
 

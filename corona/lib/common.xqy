@@ -21,6 +21,7 @@ import module namespace json="http://marklogic.com/json" at "json.xqy";
 import module namespace dateparser="http://marklogic.com/dateparser" at "date-parser.xqy";
 import module namespace config="http://marklogic.com/corona/index-config" at "index-config.xqy";
 import module namespace store="http://marklogic.com/corona/store" at "store.xqy";
+import module namespace manage="http://marklogic.com/corona/manage" at "manage.xqy";
 
 declare namespace corona="http://marklogic.com/corona";
 declare namespace search="http://marklogic.com/appservices/search";
@@ -28,6 +29,36 @@ declare namespace sec="http://marklogic.com/xdmp/security";
 
 declare default function namespace "http://www.w3.org/2005/xpath-functions";
 
+declare function common:log(
+    $name as xs:string,
+    $message as item()*
+) as empty-sequence()
+{
+    common:log($name, (), $message)
+};
+
+declare function common:log(
+    $name as xs:string,
+    $description as xs:string?,
+    $message as item()*
+) as empty-sequence()
+{
+    if(manage:getDebugLogging())
+    then
+        let $message := string-join(
+            for $i in $message
+            let $i :=
+                if($i instance of element() and namespace-uri($i) = "http://marklogic.com/json")
+                then json:serialize($i)
+                else $i
+            return xdmp:quote(<foo>{ $i }</foo>/node()),
+        ", ")
+        return
+            if(exists($description))
+            then xdmp:log(concat($name, ": ", $description, " - ", $message))
+            else xdmp:log(concat($name, ": ", $message))
+    else ()
+};
 
 declare function common:validateOutputFormat(
     $outputFormat as xs:string
@@ -38,11 +69,24 @@ declare function common:validateOutputFormat(
 
 declare function common:error(
     $exceptionCode as xs:string,
-    $message as xs:string,
-    $outputFormat as xs:string
+    $message as xs:string
 )
 {
-	(: Here a good ref: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html :)
+    common:error($exceptionCode, $message, ())
+};
+
+declare function common:error(
+    $exceptionCode as xs:string,
+    $message as xs:string,
+    $outputFormat as xs:string?
+)
+{
+    let $outputFormat :=
+        if(exists($outputFormat))
+        then $outputFormat
+        else manage:defaultOutputFormat()
+
+	(: Here a good ref for HTTP response codes: http://www.w3.org/Protocols/rfc2616/rfc2616-sec10.html :)
     let $isA400 := (
         "corona:DUPLICATE-INDEX-NAME",
         "corona:DUPLICATE-PLACE-ITEM",
@@ -68,7 +112,7 @@ declare function common:error(
 
     let $set := xdmp:set-response-code($statusCode, $message)
     let $add := xdmp:add-response-header("Date", string(current-dateTime()))
-    return
+    let $output :=
 			if($outputFormat = "xml")
 			then
 				<corona:error>
@@ -86,11 +130,13 @@ declare function common:error(
 						))
 					))
 				)
+    let $log := common:log("Error", $output)
+    return $output
 };
 
 declare function common:errorFromException(
     $exception as element(),
-    $outputFormat as xs:string
+    $outputFormat as xs:string?
 )
 {
     if($exception/*:code = "SEC-ROLEDNE")
@@ -227,24 +273,20 @@ declare function common:humanOperatorToMathmatical(
 };
 
 declare function common:translateSnippet(
-    $snippet as element(search:snippet),
-    $outputType as xs:string
+    $snippet as element(search:snippet)
 ) as item()*
 {
-    let $results :=
-        for $match in $snippet/search:match
-        return
-            string-join(
-                for $node in $match/node()
-                return
-                    if($node instance of element(search:highlight))
-                    then concat("<span class='hit'>", string($node), "</span>")
-                    else string($node)
-            , "")
-    return
-        if($outputType = "json")
-        then json:array($results)
-        else $results
+	for $match in $snippet/search:match
+	let $path := replace($match/@path, '^fn:doc\("[^"]*"\)', "")
+	return concat("<span class='match' path='", $path, "'>",
+		string-join(
+			for $node in $match/node()
+			return
+				if($node instance of element(search:highlight))
+				then concat("<span class='hit'>", string($node), "</span>")
+				else string($node)
+		, ""), "</span>"
+	)
 };
 
 declare function common:dualStrftime(

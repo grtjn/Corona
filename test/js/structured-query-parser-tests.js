@@ -3,6 +3,18 @@ if(typeof corona == "undefined" || !corona) {
     corona.stash = {};
 }
 
+corona.addTimeZone = function(d) {
+	var offset = (new Date()).getTimezoneOffset();
+	var sign = (offset > 0 ? "-" : "+");
+	if (offset < 0) offset = -offset;
+	var hours = (offset / 60);
+	if (hours < 10) hours = "0"+hours;
+	var mins = (offset % 60);
+	if (mins < 10) mins = "0"+mins;
+	var timezone = sign + hours + ":" + mins;
+	return d + timezone;
+};
+
 corona.queries = [
     /* Contains */
     {
@@ -101,7 +113,7 @@ corona.queries = [
             "key": "foo::date",
             "equals": "November 10th, 1980"
         },
-        "result": '<cts:element-attribute-value-query xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:foo_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:text xml:lang="en">1980-11-10T00:00:00-07:00</cts:text></cts:element-attribute-value-query>',
+        "result": '<cts:element-attribute-value-query xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:foo_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:text xml:lang="en">' + corona.addTimeZone('1980-11-10T00:00:00') + '</cts:text></cts:element-attribute-value-query>',
         "purpose": "Simple JSON equals query (date)"
     },
     {
@@ -450,6 +462,15 @@ corona.queries = [
         "purpose": "boolean false query"
     },
 
+    {
+        "query": {
+            "namedQuery": "zip:94402"
+        },
+        "xmlQuery": '<namedQuery>zip:94402</namedQuery>',
+        "result": '<cts:element-geospatial-query xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:latLongKey</cts:element> <cts:region xsi:type="cts:point" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">37.554167,-122.31306</cts:region> <cts:option>coordinate-system=wgs84</cts:option></cts:element-geospatial-query>',
+        "purpose": "Named query"
+    },
+
     /* Range */
     {
         "query": {
@@ -464,7 +485,7 @@ corona.queries = [
             "range": "range1",
             "value": "November 17th 1980"
         },
-        "result": '<cts:element-attribute-range-query operator="=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">1980-11-17T00:00:00-07:00</cts:value></cts:element-attribute-range-query>',
+        "result": '<cts:element-attribute-range-query operator="=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('1980-11-17T00:00:00') + '</cts:value></cts:element-attribute-range-query>',
         "purpose": "JSON date range query"
     },
     {
@@ -473,7 +494,7 @@ corona.queries = [
             "from": "November 17th 1980",
             "to": "November 17th 1981"
         },
-        "result": '<cts:and-query xmlns:cts="http://marklogic.com/cts"> <cts:element-attribute-range-query operator="&gt;="> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">1980-11-17T00:00:00-07:00</cts:value> </cts:element-attribute-range-query> <cts:element-attribute-range-query operator="&lt;="> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">1981-11-17T00:00:00-07:00</cts:value> </cts:element-attribute-range-query></cts:and-query>',
+        "result": '<cts:and-query xmlns:cts="http://marklogic.com/cts"> <cts:element-attribute-range-query operator="&gt;="> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('1980-11-17T00:00:00') + '</cts:value> </cts:element-attribute-range-query> <cts:element-attribute-range-query operator="&lt;="> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('1981-11-17T00:00:00') + '</cts:value> </cts:element-attribute-range-query></cts:and-query>',
         "purpose": "JSON date range query with from and to"
     },
     {
@@ -527,7 +548,7 @@ corona.queries = [
             "value": "November 17th 1980",
             "operator": "ne"
         },
-        "result": '<cts:element-attribute-range-query operator="!=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">1980-11-17T00:00:00-07:00</cts:value></cts:element-attribute-range-query>',
+        "result": '<cts:element-attribute-range-query operator="!=" xmlns:cts="http://marklogic.com/cts"> <cts:element xmlns:json="http://marklogic.com/json">json:date1_003A_003Adate</cts:element> <cts:attribute>normalized-date</cts:attribute> <cts:value xsi:type="xs:dateTime" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' + corona.addTimeZone('1980-11-17T00:00:00') + '</cts:value></cts:element-attribute-range-query>',
         "purpose": "Range query operator override"
     },
     {

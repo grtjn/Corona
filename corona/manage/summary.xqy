@@ -48,6 +48,10 @@ return common:output(
 	json:document(
         json:object((
             "isManaged", manage:isManaged(),
+            "defaultOutputFormat", manage:defaultOutputFormat(),
+            "insertTransformsEnabled", manage:insertTransformsEnabled(),
+            "fetchTransformsEnabled", manage:fetchTransformsEnabled(),
+            "debugLogging", manage:getDebugLogging(),
             "features", json:object((
                 "JSONDocs", json:isSupported(),
                 "JSONPath", pathparser:supportedFormats() = "json",
@@ -65,6 +69,7 @@ return common:output(
                     "name", xdmp:host-name($host)
                 ))
             )),
+            "env", manage:getEnvVars(),
             "indexes", json:object((
                 "stemming", admin:database-get-stemmed-searches($config, $database),
                 "uris", admin:database-get-uri-lexicon($config, $database),
@@ -82,13 +87,15 @@ return common:output(
                 "anonymousPlace", manage:getPlace(())
             )),
             "transformers", json:array(manage:getAllTransformerNames()),
+            "namedQueryPrefixes", json:array(manage:getNamedQueryPrefixes()),
             "statistics", json:object((
                 "XMLDocumentCount", $numXMLDocs,
                 "JSONDocumentCount", $numJSONDocs,
                 "TextDocumentCount", $numTextDocs,
                 "BinaryDocumentCount", $numBinaryDocs
             )),
-            "xmlNamespaces", json:array(manage:getAllNamespaces())
+            "xmlNamespaces", json:array(manage:getAllNamespaces()),
+            "xmlSchemas", json:array(manage:getAllSchemaURIs())
         ))
     )
 	return
@@ -105,7 +112,8 @@ return common:output(
             manage:deleteAllPlaces(),
             manage:deleteAllGeos(),
             manage:deleteAllTransformers(),
-            manage:deleteAllNamespaces()
+            manage:deleteAllNamespaces(),
+            manage:deleteAllSchemas()
     )
     else ()
 )

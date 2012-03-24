@@ -662,7 +662,7 @@ declare private function json:processElement(
     else if($element/@type = "null") then "null"
     else if(exists($element/@boolean)) then xs:string($element/@boolean)
     else if($element/@type = "number") then xs:string($element)
-    else if($element/@type = "xml") then ('"', json:escapeJSONString(xdmp:quote(<remove_json_ns>{ $element/* }</remove_json_ns>/*)), '"')
+    else if($element/@type = "xml") then ('"', json:escapeJSONString(xdmp:quote(<remove_json_ns>{ $element/* }</remove_json_ns>/*, <options xmlns="xdmp:quote"><indent>no</indent></options>)), '"')
     else ('"', json:escapeJSONString($element), '"')
 };
 

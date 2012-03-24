@@ -16,6 +16,8 @@ limitations under the License.
 
 xquery version "1.0-ml";
 
+import module namespace manage="http://marklogic.com/corona/manage" at "manage.xqy";
+import module namespace common="http://marklogic.com/corona/common" at "common.xqy";
 import module namespace rest="http://marklogic.com/appservices/rest" at "rest/rest.xqy";
 import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/config/endpoints.xqy";
 
@@ -24,17 +26,22 @@ declare default function namespace "http://www.w3.org/2005/xpath-functions";
 declare option xdmp:mapping "false";
 
 let $url := xdmp:get-request-url()
-(:
-let $result := rest:rewrite(endpoints:options())
-return
-    if(exists($result))
-    then $result
-    else if(starts-with($url, "/test") or starts-with($url, "/corona/htools/"))
-    then $url
-    else concat("/corona/misc/404.xqy?", substring-after(xdmp:get-request-url(), "?"))
-:)
+let $log :=
+    if(manage:getDebugLogging())
+    then (
+        common:log("Request", concat(xdmp:get-request-method(), " ", $url)),
+
+        for $header in xdmp:get-request-header-names()
+        for $value in xdmp:get-request-header($header)
+        return common:log("Header", concat("    ", $header, ": ", $value)),
+
+        for $param in xdmp:get-request-field-names()
+        for $value in xdmp:get-request-field($param)
+        return common:log("Parameter", concat("    ", $param, ": ", $value))
+    )
+    else ()
 return
 	if(starts-with($url, "/test") or starts-with($url, "/corona/htools/"))
     then $url
-    else 
+    else
 		rest:rewrite(endpoints:options())

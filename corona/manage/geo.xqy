@@ -30,7 +30,7 @@ declare option xdmp:mapping "false";
 
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/manage/geo.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/manage/geo.xqy", $requestMethod))
 let $name := map:get($params, "name")
 let $outputFormat := (map:get($params, "outputFormat"), 'json')[1]
 

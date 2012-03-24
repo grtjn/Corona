@@ -33,6 +33,40 @@ declare default function namespace "http://www.w3.org/2005/xpath-functions";
 declare variable $xsltEval := try { xdmp:function(xs:QName("xdmp:xslt-eval")) } catch ($e) {};
 declare variable $xsltIsSupported := try { xdmp:apply($xsltEval, <xsl:stylesheet xmlns:xsl="http://www.w3.org/1999/XSL/Transform" version="1.0"/>, <foo/>)[3], true() } catch ($e) {xdmp:log($e), false() };
 
+declare function store:outputRawDocument(
+    $doc as document-node(),
+    $extractPath as xs:string?,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map,
+    $outputFormat as xs:string
+) as item()
+{
+    let $documentType := store:getDocumentTypeFromDoc($doc)
+
+    (: Perform the path extraction if one was provided :)
+    let $content :=
+        if(exists($extractPath) and $documentType = "xml")
+        then store:wrapContentNodes(path:select($doc, $extractPath, "xpath"), $documentType)
+        else if(exists($extractPath) and $documentType = "json")
+        then store:wrapContentNodes(path:select($doc/json:json, $extractPath, "json"), $documentType)
+        else if($documentType = "text")
+        then $doc/text()
+        else $doc
+
+    (: Apply the transformation :)
+    let $content :=
+        if(exists(manage:getEnvVar("fetchTransformer")))
+        then store:applyContentTransformer(manage:getEnvVar("fetchTransformer"), $content, $requestParameters)
+        else $content
+
+    let $content :=
+        if(exists($applyTransform) and manage:fetchTransformsEnabled())
+        then store:applyContentTransformer($applyTransform, $content, $requestParameters)
+        else $content
+
+    return $content
+};
+
 (:
     Can take in a JSON document, XML document, text document, binary node or binary sidecar.
     Will *not* output just the raw document if include equals and only equals "content", use doc() for that instead.
@@ -43,6 +77,7 @@ declare function store:outputDocument(
     $extractPath as xs:string?,
     $applyTransform as xs:string?,
     $highlightQuery as cts:query?,
+    $requestParameters as map:map,
     $outputFormat as xs:string
 ) as element()
 {
@@ -66,8 +101,6 @@ declare function store:outputDocument(
         else if($documentType = "binary")
         then string(doc($contentURI)/corona:sidecar/corona:suppliedContent/@format)
         else $documentType
-
-    let $collections := xdmp:document-get-collections($contentURI)
 
     let $searchableContent :=
         if($documentType = "text")
@@ -96,8 +129,13 @@ declare function store:outputDocument(
 
     (: Apply the transformation :)
     let $content :=
-        if(exists($applyTransform))
-        then store:applyTransformer($applyTransform, $content)
+        if(exists(manage:getEnvVar("fetchTransformer")))
+        then store:applyContentTransformer(manage:getEnvVar("fetchTransformer"), $content, $requestParameters)
+        else $content
+
+    let $content :=
+        if(exists($applyTransform) and manage:fetchTransformsEnabled())
+        then store:applyContentTransformer($applyTransform, $content, $requestParameters)
         else $content
 
     (: If the wrapper element from wrapContentNodes is still sticking around, remove it :)
@@ -108,7 +146,7 @@ declare function store:outputDocument(
 
     let $snippet :=
         if($include = ("snippet", "all") and exists($highlightQuery))
-        then common:translateSnippet(search:snippet($doc, <cast>{ $highlightQuery }</cast>/*), $outputFormat)
+        then common:translateSnippet(search:snippet($doc, <cast>{ $highlightQuery }</cast>/*))
         else ()
 
     return
@@ -139,7 +177,7 @@ declare function store:outputDocument(
             if($documentType = ("binary", "binary-sidecar") and $include = ("binaryMetadata", "all"))
             then ("binaryMetadata", json:object((
                 for $meta in doc($contentURI)/corona:sidecar/corona:meta/*
-                return (local-name($meta), string($meta))
+                return (local-name($meta), string(($meta/@normalized-date, $meta)[1]))
             )))
             else ()
         ))
@@ -187,6 +225,7 @@ declare function store:outputMultipleDocuments(
     $query as cts:query?,
     $extractPath as xs:string?,
     $applyTransform as xs:string?,
+    $requestParameters as map:map,
     $outputFormat as xs:string
 ) as element()
 {
@@ -201,7 +240,7 @@ declare function store:outputMultipleDocuments(
 
     let $results :=
         for $doc in $docs
-        return store:outputDocument($doc, $include, $extractPath, $applyTransform, $query, $outputFormat)
+        return store:outputDocument($doc, $include, $extractPath, $applyTransform, $query, $requestParameters, $outputFormat)
     let $executionTime := substring(string(xdmp:query-meters()/*:elapsed-time), 3, 4)
     return
         if($outputFormat = "json")
@@ -282,39 +321,47 @@ declare function store:getDocumentTypeFromDoc(
 declare function store:deleteDocument(
     $uri as xs:string,
     $includeURIs as xs:boolean,
+    $requestParameters as map:map,
     $outputFormat as xs:string
 ) as element()
 {
     if(store:documentExists($uri))
-    then (
-        if(store:getDocumentType($uri) = "binary" and exists(doc(store:getSidecarURI($uri))))
-        then xdmp:document-delete(store:getSidecarURI($uri))
-        else (),
-        xdmp:document-delete($uri),
-        if($outputFormat = "json")
-        then json:object((
-            "meta", json:object((
-                "deleted", 1,
-                "numRemaining", 0
-            )),
-            if($includeURIs)
-            then ("uris", json:array($uri))
-            else ()
-        ))
-        else if($outputFormat = "xml")
-        then <corona:results>
-            <corona:meta>
-                <corona:deleted>1</corona:deleted>
-                <corona:numRemaining>0</corona:numRemaining>
-            </corona:meta>
-            {
-                if($includeURIs)
-                then <corona:uris><corona:uri>{ $uri }</corona:uri></corona:uris>
+    then
+        let $uris :=
+            if(exists(manage:getEnvVar("deleteTransformer")))
+            then store:applyURITransformer(manage:getEnvVar("deleteTransformer"), $uri, $requestParameters)
+            else $uri
+        let $delete :=
+            for $uri in $uris
+            let $deleteSidecar :=
+                if(store:getDocumentType($uri) = "binary" and exists(doc(store:getSidecarURI($uri))))
+                then xdmp:document-delete(store:getSidecarURI($uri))
                 else ()
-            }
-        </corona:results>
-        else ()
-    )
+            return xdmp:document-delete($uri)
+        return
+            if($outputFormat = "json")
+            then json:object((
+                "meta", json:object((
+                    "deleted", 1,
+                    "numRemaining", 0
+                )),
+                if($includeURIs)
+                then ("uris", json:array($uris))
+                else ()
+            ))
+            else if($outputFormat = "xml")
+            then <corona:results>
+                <corona:meta>
+                    <corona:deleted>1</corona:deleted>
+                    <corona:numRemaining>0</corona:numRemaining>
+                </corona:meta>
+                {
+                    if($includeURIs)
+                    then <corona:uris>{ for $uri in $uris return <corona:uri>{ $uri }</corona:uri> }</corona:uris>
+                    else ()
+                }
+            </corona:results>
+            else ()
     else error(xs:QName("corona:DOCUMENT-NOT-FOUND"), concat("There is no document to delete at '", $uri, "'"))
 };
 
@@ -323,26 +370,52 @@ declare function store:deleteDocumentsWithQuery(
     $bulkDelete as xs:boolean,
     $includeURIs as xs:boolean,
     $limit as xs:integer?,
+    $requestParameters as map:map,
     $outputFormat as xs:string
 ) as element()
 {
-    let $docs :=
-        if(exists($limit))
-        then cts:search(doc(), $query)[1 to $limit]
-        else cts:search(doc(), $query)
-    let $count := if(exists($docs)) then cts:remainder($docs[1]) else 0
+    let $count := 0
+    let $uris :=
+        try {
+            let $results :=
+                if(exists($limit))
+                then cts:uris((), $query)[1 to $limit]
+                else cts:uris((), $query)
+            let $set := if(exists($results)) then xdmp:set($count, cts:remainder($results[1])) else ()
+            for $result in $results
+            return
+                if(store:isSidecarURI($result))
+                then string(doc($result)/corona:sidecar/@original)
+                else $result
+        }
+        catch ($e) {
+            let $results :=
+                if(exists($limit))
+                then cts:search(doc(), $query)[1 to $limit]
+                else cts:search(doc(), $query)
+            let $set := if(exists($results)) then xdmp:set($count, cts:remainder($results[1])) else ()
+            for $result in $results
+            return ($result/corona:sidecar/@original, base-uri($result))[1]
+        }
+
+    let $uris :=
+        if(exists(manage:getEnvVar("deleteTransformer")))
+        then store:applyURITransformer(manage:getEnvVar("deleteTransformer"), $uris, $requestParameters)
+        else $uris
+
     let $numDeleted :=
         if(exists($limit))
         then $limit
-        else $count
-    let $deletedURIs :=
-        for $doc in $docs
-        let $uri := base-uri($doc)
+        else count($uris)
+
+    let $delete :=
+        for $uri in $uris
+        let $doc := doc($uri)
         where not(xdmp:document-get-collections($uri) = $const:TransformersCollection)
         return (
-            if(exists(doc($doc/corona:sidecar/@original)))
-            then (string($doc/corona:sidecar/@original), xdmp:document-delete($doc/corona:sidecar/@original))
-            else $uri
+            if(exists($doc/binary()))
+            then xdmp:document-delete(base-uri(/corona:sidecar[@original = $uri]))
+            else ()
             ,
             xdmp:document-delete($uri)
         )
@@ -356,7 +429,7 @@ declare function store:deleteDocumentsWithQuery(
                     "numRemaining", $count - $numDeleted
                 )),
                 if($includeURIs)
-                then ("uris", json:array($deletedURIs))
+                then ("uris", json:array($uris))
                 else ()
             ))
             else if($outputFormat = "xml")
@@ -367,10 +440,7 @@ declare function store:deleteDocumentsWithQuery(
                 </corona:meta>
                 {
                     if($includeURIs)
-                    then <corona:uris>{
-                        for $uri in $deletedURIs
-                        return <corona:uri>{ $uri }</corona:uri>
-                    }</corona:uris>
+                    then <corona:uris>{ for $uri in $uris return <corona:uri>{ $uri }</corona:uri> }</corona:uris>
                     else ()
                 }
             </corona:results>
@@ -387,24 +457,57 @@ declare function store:insertDocument(
     $properties as element()*,
     $permissions as element()*,
     $quality as xs:integer?,
-    $contentType as xs:string
+    $contentType as xs:string,
+	$repair as xs:boolean
 ) as empty-sequence()
+{
+    store:insertDocument($uri, $content, $collections, $properties, $permissions, $quality, $contentType, $repair, (), map:map(), false())
+};
+
+declare function store:insertDocument(
+    $uri as xs:string,
+    $content as xs:string,
+    $collections as xs:string*,
+    $properties as element()*,
+    $permissions as element()*,
+    $quality as xs:integer?,
+    $contentType as xs:string,
+	$repair as xs:boolean,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map,
+    $respondWithContent as xs:boolean
+) as node()?
 {
     let $test := store:validateURI($uri)
     let $body :=
         if($contentType = "json")
         then json:parse($content)
         else if($contentType = "xml")
-        then xdmp:unquote($content, (), ("repair-none", "format-xml"))[1]
+        then store:unquoteXML($content, $repair)
         else if($contentType = "text")
         then text { $content }
         else error(xs:QName("corona:INVALID-PARAMETER"), "Invalid content type, must be one of xml, json or text")
-    return (
-        xdmp:document-insert($uri, $body, (xdmp:default-permissions(), $permissions), $collections, $quality),
+
+    (: Apply the transformation :)
+    let $body :=
+        if(exists($applyTransform) and manage:insertTransformsEnabled())
+        then store:applyContentTransformer($applyTransform, $body, $requestParameters)
+        else $body
+
+    let $body :=
+        if(exists(manage:getEnvVar("insertTransformer")))
+        then store:applyContentTransformer(manage:getEnvVar("insertTransformer"), $body, $requestParameters)
+        else $body
+
+    let $insert := xdmp:document-insert($uri, $body, (xdmp:default-permissions(), $permissions), $collections, $quality)
+    let $set :=
         if(exists($properties))
         then xdmp:document-set-properties($uri, $properties)
         else xdmp:document-set-properties($uri, ())
-    )
+    return
+        if($respondWithContent)
+        then $body
+        else ()
 };
 
 declare function store:insertBinaryDocument(
@@ -419,22 +522,58 @@ declare function store:insertBinaryDocument(
     $extractContent as xs:boolean
 ) as empty-sequence()
 {
+    store:insertBinaryDocument($uri, $content, $suppliedContent, $collections, $properties, $permissions, $quality, $extractMetadata, $extractContent, (), map:map(), false())
+};
+
+declare function store:insertBinaryDocument(
+    $uri as xs:string,
+    $content as binary(),
+    $suppliedContent as xs:string?,
+    $collections as xs:string*,
+    $properties as element()*,
+    $permissions as element()*,
+    $quality as xs:integer?,
+    $extractMetadata as xs:boolean,
+    $extractContent as xs:boolean,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map,
+    $respondWithContent as xs:boolean
+) as node()?
+{
     let $test := store:validateURI($uri)
     let $sidecarURI := store:getSidecarURI($uri)
-    let $sidecar := store:createSidecarDocument($uri, $content, $suppliedContent, $extractMetadata, $extractContent)
+    let $sidecar := store:createSidecarDocument($uri, $content, $suppliedContent, $extractMetadata, $extractContent, $applyTransform, $requestParameters)
     let $insertSidecar := xdmp:document-insert($sidecarURI, $sidecar, (xdmp:default-permissions(), $permissions), $collections, $quality)
     let $setPropertis :=
         if(exists($properties))
         then xdmp:document-set-properties($sidecarURI, $properties)
         else xdmp:document-set-properties($sidecarURI, ())
-    return xdmp:document-insert($uri, $content, (xdmp:default-permissions(), $permissions), $collections, $quality)
+    let $insert := xdmp:document-insert($uri, $content, (xdmp:default-permissions(), $permissions), $collections, $quality)
+    return
+        if($respondWithContent)
+        then $content
+        else ()
 };
 
 declare function store:updateDocumentContent(
     $uri as xs:string,
     $content as xs:string,
-    $contentType as xs:string
+    $contentType as xs:string,
+	$repair as xs:boolean
 ) as empty-sequence()
+{
+    store:updateDocumentContent($uri, $content, $contentType, $repair, (), map:map(), false())
+};
+
+declare function store:updateDocumentContent(
+    $uri as xs:string,
+    $content as xs:string,
+    $contentType as xs:string,
+	$repair as xs:boolean,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map,
+    $respondWithContent as xs:boolean
+) as node()?
 {
     let $existing := doc($uri)
     let $test :=
@@ -445,14 +584,30 @@ declare function store:updateDocumentContent(
         if($contentType = "json")
         then json:parse($content)
         else if($contentType = "xml")
-        then xdmp:unquote($content, (), ("repair-none", "format-xml"))[1]
+        then store:unquoteXML($content, $repair)
         else if($contentType = "text")
         then text { $content }
         else error(xs:QName("corona:INVALID-PARAMETER"), "Invalid content type, must be one of xml or json")
-    return
+
+    (: Apply the transformation :)
+    let $body :=
+        if(exists($applyTransform) and manage:insertTransformsEnabled())
+        then store:applyContentTransformer($applyTransform, $body, $requestParameters)
+        else $body
+
+    let $body :=
+        if(exists(manage:getEnvVar("insertTransformer")))
+        then store:applyContentTransformer(manage:getEnvVar("insertTransformer"), $body, $requestParameters)
+        else $body
+
+    let $update :=
         if($contentType = "text")
         then xdmp:node-replace($existing, $body)
         else xdmp:node-replace($existing/*, $body)
+    return
+        if($respondWithContent)
+        then $body
+        else ()
 };
 
 declare function store:updateBinaryDocumentContent(
@@ -463,6 +618,20 @@ declare function store:updateBinaryDocumentContent(
     $extractContent as xs:boolean
 ) as empty-sequence()
 {
+    store:updateBinaryDocumentContent($uri, $content, $suppliedContent, $extractMetadata, $extractContent, (), map:map(), false())
+};
+
+declare function store:updateBinaryDocumentContent(
+    $uri as xs:string,
+    $content as binary(),
+    $suppliedContent as xs:string?,
+    $extractMetadata as xs:boolean,
+    $extractContent as xs:boolean,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map,
+    $respondWithContent as xs:boolean
+) as node()?
+{
     let $test := store:validateURI($uri)
     let $existing := doc($uri)
     let $test :=
@@ -472,12 +641,16 @@ declare function store:updateBinaryDocumentContent(
 
     let $sidecarURI := store:getSidecarURI($uri)
     let $existingSidecar := doc($sidecarURI)
-    let $sidecar := store:createSidecarDocument($uri, $content, $suppliedContent, $extractMetadata, $extractContent)
+    let $sidecar := store:createSidecarDocument($uri, $content, $suppliedContent, $extractMetadata, $extractContent, $applyTransform, $requestParameters)
     let $updateSidecar :=
         if(exists($existingSidecar))
         then xdmp:node-replace($existingSidecar/*, $sidecar)
         else xdmp:document-insert($sidecarURI, $sidecar, (xdmp:default-permissions(), xdmp:document-get-permissions($uri)), xdmp:document-get-collections($uri), xdmp:document-get-quality($uri))
-    return xdmp:node-replace($existing/node(), $content)
+    let $update := xdmp:node-replace($existing/node(), $content)
+    return
+        if($respondWithContent)
+        then $content
+        else ()
 };
 
 declare function store:getBinaryContentType(
@@ -740,17 +913,37 @@ declare private function store:wrapContentNodes(
         else $nodes
 };
 
-declare private function store:applyTransformer(
+declare private function store:applyContentTransformer(
     $name as xs:string,
-    $content as node()
+    $content as node(),
+    $requestParameters as map:map
 ) as item()*
 {
     let $transformer := manage:getTransformer($name)
     return
-        if(exists($transformer/*) and $xsltIsSupported)
-        then xdmp:apply($xsltEval, $transformer/*, $content)
+        if(empty($transformer))
+        then error(xs:QName("corona:INVALID-TRANSFORMER"), concat("No transformer with the name '", $name, "' exists"))
+        else if(exists($transformer/*) and $xsltIsSupported)
+        then xdmp:apply($xsltEval, $transformer/*, $content, $requestParameters)
         else if(exists($transformer/text()))
-        then xdmp:eval(string($transformer), (xs:QName("content"), $content), <options xmlns="xdmp:eval"><isolation>same-statement</isolation></options>)
+        then xdmp:eval(string($transformer), (xs:QName("content"), $content, xs:QName("requestParameters"), $requestParameters, xs:QName("testMode"), false()), <options xmlns="xdmp:eval"><isolation>same-statement</isolation></options>)
+        else error(xs:QName("corona:INVALID-TRANSFORMER"), "XSLT transformations are not supported in this version of MarkLogic, upgrade to 5.0 or later")
+};
+
+declare private function store:applyURITransformer(
+    $name as xs:string,
+    $uris as xs:string+,
+    $requestParameters as map:map
+) as item()*
+{
+    let $transformer := manage:getTransformer($name)
+	let $map := map:map()
+	let $put := map:put($map, "uris", $uris)
+    return
+        if(empty($transformer))
+        then error(xs:QName("corona:INVALID-TRANSFORMER"), concat("No transformer with the name '", $name, "' exists"))
+        else if(exists($transformer/text()))
+        then xdmp:eval(string($transformer), (xs:QName("content"), $map, xs:QName("requestParameters"), $requestParameters, xs:QName("testMode"), false()), <options xmlns="xdmp:eval"><isolation>same-statement</isolation></options>)
         else error(xs:QName("corona:INVALID-TRANSFORMER"), "XSLT transformations are not supported in this version of MarkLogic, upgrade to 5.0 or later")
 };
 
@@ -759,6 +952,13 @@ declare private function store:getSidecarURI(
 ) as xs:string
 {
     concat($uri, "-sidecar")
+};
+
+declare private function store:isSidecarURI(
+    $uri as xs:string
+) as xs:boolean
+{
+    ends-with($uri, "-sidecar")
 };
 
 declare private function store:getDocumentURIFromSidecar(
@@ -773,7 +973,9 @@ declare private function store:createSidecarDocument(
     $content as binary(),
     $suppliedContent as xs:string?,
     $extractMetadata as xs:boolean,
-    $extractContent as xs:boolean
+    $extractContent as xs:boolean,
+    $applyTransform as xs:string?,
+    $requestParameters as map:map
 ) as element(corona:sidecar)
 {
     let $suppliedContentFormat := common:xmlOrJSON($suppliedContent)
@@ -782,7 +984,7 @@ declare private function store:createSidecarDocument(
         then
             if($suppliedContentFormat = "json")
             then json:parse($suppliedContent)
-            else xdmp:unquote($suppliedContent, (), ("repair-none", "format-xml"))[1]
+            else store:unquoteXML($suppliedContent, false())
         else ()
     return <corona:sidecar type="binary" original="{ $documentURI }">
         <corona:suppliedContent format="{ $suppliedContentFormat }">{ $suppliedContent }</corona:suppliedContent>
@@ -791,24 +993,37 @@ declare private function store:createSidecarDocument(
             then ()
             else
 
-            let $extratedInfo := try {
+            let $extractedInfo := try {
                 xdmp:apply(xdmp:function(xs:QName("xdmp:document-filter")), $content)
             }
             catch ($e) {
                 ()
             }
-            where exists($extratedInfo)
+            where exists($extractedInfo)
             return (
                 if($extractMetadata)
                 then
                 <corona:meta>{(
-                    if(exists($extratedInfo/*:html/*:head/*:title))
-                    then <corona:title>{ string($extratedInfo/*:html/*:head/*:title) }</corona:title>
+                    if(exists($extractedInfo/*:html/*:head/*:title))
+                    then <corona:title>{ string($extractedInfo/*:html/*:head/*:title) }</corona:title>
                     else (),
 
-                    for $item in $extratedInfo/*:html/*:head/*:meta
+                    let $map := map:map()
+                    for $item in $extractedInfo/*:html/*:head/*:meta
+                    let $name :=
+                        if($item/@name != "xmp")
+                        then string($item/@name)
+                        else
+                            let $bits := tokenize($item/@content, ":")
+                            return concat($bits[1], "_", $bits[2])
+
+                    let $value :=
+                        if($item/@name != "xmp")
+                        then string($item/@content)
+                        else string-join(tokenize($item/@content, ":")[3 to last()], ":")
+
                     let $name := string-join(
-                        for $bit at $pos in tokenize($item/@name, "\-| |_")
+                        for $bit at $pos in tokenize($name, "\-| |_")
                         return 
                             if($pos > 1)
                             then concat(upper-case(substring($bit, 1, 1)), substring($bit, 2))
@@ -817,23 +1032,55 @@ declare private function store:createSidecarDocument(
                                 then concat(lower-case(substring($bit, 1, 1)), substring($bit, 2))
                                 else $bit
                     , "")
-                    let $element := element { xs:QName(concat("corona:", json:escapeNCName(string($name)))) } { string($item/@content) }
-                    where $name != "filterCapabilities"
-                    return
-                        if($name = "dimensions" and count(tokenize($item/@content, " x ")) = 2)
-                        then ($element, <corona:width>{ substring-before($item/@content, " x ") }</corona:width>, <corona:height>{ substring-after($item/@content, " x ") }</corona:height>)
+
+                    let $name :=
+                        (: Creating a mapping of various modification date names and changing them all to "modDate" :)
+                        if($name = "lastSavedDate")
+                        then "modDate"
+                        else $name
+
+                    let $element := element { xs:QName(concat("corona:", json:escapeNCName(string($name)))) } {(
+                        if(matches($name, "date", "i"))
+                        then
+                            let $normDate := dateparser:parse($value)
+                            where exists($normDate)
+                            return attribute { "normalized-date" } { $normDate }
+                        else ()
+                        ,
+                        string($value)
+                    )}
+                    where $name != "filterCapabilities" and empty(map:get($map, $name))
+                    return (
+                        if($name = "dimensions" and count(tokenize($value, " x ")) = 2)
+                        then ($element, <corona:width>{ substring-before($value, " x ") }</corona:width>, <corona:height>{ substring-after($value, " x ") }</corona:height>)
                         else $element
+                        ,
+                        map:put($map, $name, true())
+                    )
                 )}</corona:meta>
                 else (),
 
-                if(exists($extratedInfo/*:html/*:body) and $extractContent)
+                if(exists($extractedInfo/*:html/*:body) and $extractContent)
                 then
-                <corona:extractedContent>{
-                    for $para in $extratedInfo/*:html/*:body/*:p
-                    let $string := normalize-space($para)
-                    where string-length($string)
-                    return <corona:extractedPara>{ $string }</corona:extractedPara>
-                }</corona:extractedContent>
+                    let $content :=
+                        <corona:extractedContent>{
+                            for $para in $extractedInfo/*:html/*:body/*:p
+                            let $string := normalize-space($para)
+                            where string-length($string)
+                            return <corona:extractedPara>{ $string }</corona:extractedPara>
+                        }</corona:extractedContent>
+
+                    let $content :=
+                        if(exists($applyTransform) and manage:insertTransformsEnabled())
+                        then store:applyContentTransformer($applyTransform, $content, $requestParameters)
+                        else $content
+
+                    let $content :=
+                        if(exists(manage:getEnvVar("insertTransformer")))
+                        then store:applyContentTransformer(manage:getEnvVar("insertTransformer"), $content, $requestParameters)
+                        else $content
+
+                    return $content
                 else ()
             )
         }
@@ -845,6 +1092,19 @@ declare private function store:validateURI(
 ) as empty-sequence()
 {
     if(starts-with($uri, "_/") or ends-with($uri, "-sidecar"))
-    then error(xs:QName("INVALID-URI"), "Document URI's starting with '_/' or ending with '-sidecar' are reserved")
+    then error(xs:QName("corona:INVALID-URI"), "Document URI's starting with '_/' or ending with '-sidecar' are reserved")
     else ()
+};
+
+declare private function store:unquoteXML(
+    $content as xs:string,
+	$repair as xs:boolean
+) as document-node()
+{
+    try {
+        xdmp:unquote($content, (), (if($repair) then () else "repair-none", "format-xml"))[1]
+    }
+    catch ($e) {
+        error(xs:QName("corona:INVALID-XML"), concat("Invalid XML: ", substring-after($e/*:format-string, " -- ")))
+    }
 };

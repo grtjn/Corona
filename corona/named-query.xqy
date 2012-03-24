@@ -31,14 +31,20 @@ declare option xdmp:mapping "false";
 
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/named-query.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/named-query.xqy", $requestMethod))
 
 let $name := map:get($params, "name")
+let $collections := map:get($params, "collection")
+let $properties := map:get($params, "property")
+let $matchingDocs := map:get($params, "matchingDoc")
 let $stringQuery := map:get($params, "stringQuery")
 let $structuredQuery := map:get($params, "structuredQuery")
 let $outputFormat := common:getOutputFormat((), map:get($params, "outputFormat"))
 
 let $errors := (
+    if($requestMethod = "GET" and exists($matchingDocs) and exists(($name, $properties, $collections)))
+    then common:error("corona:INVALID-PARAMETER", "When supplying a matching document, requests can not contain name, property or collection parameters", $outputFormat)
+    else (),
     if($requestMethod = "POST" and empty(($stringQuery, $structuredQuery)))
     then common:error("corona:MISSING-PARAMETER", "Must supply a string or structured query when creating a stored query", $outputFormat)
     else (),
@@ -50,19 +56,21 @@ let $errors := (
     else ()
 )
 
+
 return common:output(
     if(exists($errors))
     then $errors
     else 
 
     if($requestMethod = "POST")
-    then try {
+    then try {(
+        xdmp:set-response-code(204, "Query inserted"),
         if(exists($stringQuery))
-        then search:saveStringQuery($name, map:get($params, "description"), $stringQuery, map:get($params, "collection"), common:processPropertiesParameter(map:get($params, "property")), common:processPermissionParameter(map:get($params, "permission")))
+        then search:saveStringQuery($name, map:get($params, "description"), $stringQuery, $collections, common:processPropertiesParameter($properties), common:processPermissionParameter(map:get($params, "permission")))
         else if(exists($structuredQuery))
-        then search:saveStructuredQuery($name, map:get($params, "description"), $structuredQuery, map:get($params, "collection"), common:processPropertiesParameter(map:get($params, "property")), common:processPermissionParameter(map:get($params, "permission")))
+        then search:saveStructuredQuery($name, map:get($params, "description"), $structuredQuery, $collections, common:processPropertiesParameter($properties), common:processPermissionParameter(map:get($params, "permission")))
         else ()
-    }
+    )}
     catch ($e) {
         common:errorFromException($e, $outputFormat)
     }
@@ -71,23 +79,31 @@ return common:output(
     then try {
         let $start := map:get($params, "start")
         let $length := map:get($params, "length")
-        let $property := map:get($params, "property")
         let $value := map:get($params, "value")
 
         let $query := cts:and-query((
             cts:collection-query($const:StoredQueriesCollection),
 
-            if(exists($name))
+            if(exists(map:get($params, "prefix")))
+            then cts:element-attribute-value-query(xs:QName("corona:storedQuery"), xs:QName("prefix"), map:get($params, "prefix"), "exact")
+            else (),
+
+            if(string-length($name) > 0)
             then cts:element-attribute-value-query(xs:QName("corona:storedQuery"), xs:QName("name"), $name, "exact")
             else (),
 
-            if(exists($property))
-            then cts:properties-query(cts:element-value-query(QName("http://marklogic.com/corona", $property), $value, "exact"))
+            if(exists($properties))
+            then cts:properties-query(cts:element-value-query(QName("http://marklogic.com/corona", $properties), $value, "exact"))
             else (),
 
-            for $collection in map:get($params, "collection")
-            return cts:collection-query($collection)
+            for $collection in $collections
+            return cts:collection-query($collection),
+
+            for $matchingDoc in $matchingDocs
+            return cts:reverse-query(doc($matchingDoc))
         ))
+
+        let $log := common:log("Named Query", "Fetching with", $query)
 
         let $end := $start + $length - 1
         let $results := cts:search(/corona:storedQuery, $query)[$start to $end]
@@ -119,6 +135,7 @@ return common:output(
                 "results", json:array((
                     for $result in $results
                     return json:object((
+                        if(exists($result/@prefix)) then ("prefix", string($result/@prefix)) else (),
                         "name", string($result/@name),
                         "description", string($result/@description),
                         "queryType", string($result/@type),
@@ -137,6 +154,7 @@ return common:output(
                 <corona:results>{
                     for $result in $results
                     return <corona:result>
+                        { if(exists($result/@prefix)) then <corona:prefix>{ string($result/@prefix) }</corona:prefix> else () }
                         <corona:name>{ string($result/@name) }</corona:name>
                         <corona:description>{ string($result/@description) }</corona:description>
                         <corona:queryType>{ string($result/@type) }</corona:queryType>

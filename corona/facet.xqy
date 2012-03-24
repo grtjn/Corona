@@ -33,7 +33,7 @@ declare namespace corona="http://marklogic.com/corona";
 declare option xdmp:mapping "false";
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/facet.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/facet.xqy", $requestMethod))
 let $facets := tokenize(map:get($params, "facets"), ",")
 let $stringQuery := map:get($params, "stringQuery")
 let $structuredQuery := map:get($params, "structuredQuery")

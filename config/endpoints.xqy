@@ -10,18 +10,11 @@ declare option xdmp:mapping "false";
 
 declare variable $endpoints:ENDPOINTS as element(rest:options) :=
 <options xmlns="http://marklogic.com/appservices/rest">
-    <request uri="^/?$" endpoint="/config/index.xqy" user-params="allow">
-        <http method="GET"/>
-	</request>
-	
-    <request uri="^/explore/?$" endpoint="/config/explore.xqy" user-params="allow">
-        <param name="page" as="integer" required="true" default="1"/>
-        <http method="GET"/>
-	</request>
+    <request uri="^/?$" endpoint="/config/index.xqy" user-params="allow"/>
 	
     <!-- Manage documents in the database -->
-    <request uri="^/store/?$" endpoint="/corona/store-get.xqy">
-        <param name="uri" required="false"/>
+    <request uri="^/store/?$" endpoint="/corona/store-get.xqy" user-params="allow">
+        <param name="uri" required="true"/>
         <param name="stringQuery" required="false"/>
         <param name="structuredQuery" required="false"/>
         <param name="extractPath" required="false"/>
@@ -30,7 +23,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="outputFormat" required="false" values="json|xml" default="json"/>
     </request>
 
-    <request uri="^/store/?$" endpoint="/corona/store.xqy">
+    <request uri="^/store/?$" endpoint="/corona/store.xqy" user-params="allow">
         <param name="uri" required="false"/>
         <param name="txid" required="false"/>
 
@@ -58,6 +51,9 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
             <param name="moveTo" required="false"/>
             <param name="extractMetadata" required="false" as="boolean" default="true"/>
             <param name="extractContent" required="false" as="boolean" default="true"/>
+            <param name="applyTransform" required="false"/>
+            <param name="respondWithContent" required="false" as="boolean" default="false"/>
+            <param name="repair" required="false" as="boolean" default="false"/>
         </http>
         <http method="PUT">
             <param name="contentType" required="false" values="json|xml|text|binary"/>
@@ -68,6 +64,9 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
             <param name="contentForBinary" required="false"/>
             <param name="extractMetadata" required="false" as="boolean" default="true"/>
             <param name="extractContent" required="false" as="boolean" default="true"/>
+            <param name="applyTransform" required="false"/>
+            <param name="respondWithContent" required="false" as="boolean" default="false"/>
+            <param name="repair" required="false" as="boolean" default="false"/>
         </http>
         <http method="DELETE">
             <param name="stringQuery" required="false"/>
@@ -80,12 +79,13 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
     </request>
 
     <!-- Search endpoint -->
-    <request uri="^/search/?$" endpoint="/corona/search.xqy">
+    <request uri="^/search/?$" endpoint="/corona/search.xqy" user-params="allow">
         <param name="txid" required="false"/>
         <param name="stringQuery" required="false"/>
         <param name="structuredQuery" required="false"/>
         <param name="start" required="false" as="positiveInteger" default="1"/>
         <param name="length" required="false" as="positiveInteger" default="10"/>
+        <param name="qualityWeight" required="false" as="decimal" default="1.0"/>
         <param name="include" alias="include[]" repeatable="true" required="false" default="content"/>
         <param name="filtered" required="false" default="false" as="boolean"/>
         <param name="extractPath" required="false"/>
@@ -94,12 +94,12 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
         <param name="outputFormat" required="false" values="json|xml" default="json"/>
-        <http method="GET"/>
         <http method="POST"/>
+        <http method="GET"/>
     </request>
 
     <!-- Key value queryies -->
-    <request uri="^/kvquery/?$" endpoint="/corona/kvquery.xqy">
+    <request uri="^/kvquery/?$" endpoint="/corona/kvquery.xqy" user-params="allow">
         <param name="txid" required="false"/>
         <param name="key" required="false"/>
         <param name="element" required="false"/>
@@ -115,12 +115,12 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
         <param name="outputFormat" required="false" values="json|xml" default="json"/>
-        <http method="GET"/>
         <http method="POST"/>
+        <http method="GET"/>
     </request>
 
     <!-- Facets -->
-    <request uri="^/facet/([A-Za-z0-9_\-,]+)/?$" endpoint="/corona/facet.xqy">
+    <request uri="^/facet/([A-Za-z0-9_\-,]+)/?$" endpoint="/corona/facet.xqy" user-params="allow">
         <param name="txid" required="false"/>
         <uri-param name="facets">$1</uri-param>
         <param name="stringQuery" required="false"/>
@@ -132,34 +132,34 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <param name="collection" alias="collection[]" required="false" repeatable="true"/>
         <param name="underDirectory" required="false"/>
         <param name="inDirectory" required="false"/>
-        <param name="outputFormat" required="false" values="json|xml" default="json"/>
-        <http method="GET"/>
+        <param name="outputFormat" required="false" values="xml|json" default="json"/>
         <http method="POST"/>
+        <http method="GET"/>
     </request>
 
     <!-- Transaction management -->
-    <request uri="^/transaction/(status|create|commit|rollback)/?$" endpoint="/corona/transaction.xqy">
+    <request uri="^/transaction/(status|create|commit|rollback)/?$" endpoint="/corona/transaction.xqy" user-params="allow">
         <uri-param name="action">$1</uri-param>
         <param name="txid" required="false"/>
-        <param name="outputFormat" required="false" values="json|xml" default="json"/>
+        <param name="outputFormat" required="false" values="xml|json" default="json"/>
         <param name="timeLimit" required="false" as="decimal"/>
         <http method="GET"/>
         <http method="POST"/>
     </request>
 
     <!-- Named query management -->
-    <request uri="^/namedquery/?$" endpoint="/corona/named-query.xqy">
-        <param name="outputFormat" required="false" values="json|xml" default="json"/>
+    <request uri="^/(namedquery|namedquery/([^/]+))/?$" endpoint="/corona/named-query.xqy" user-params="allow">
+        <uri-param name="name">$2</uri-param>
+        <param name="outputFormat" required="false" values="xml|json" default="json"/>
         <http method="GET">
-            <param name="name" required="false"/>
             <param name="property" required="false"/>
             <param name="value" required="false"/>
             <param name="collection" alias="collection[]" required="false" repeatable="true"/>
+            <param name="matchingDoc" alias="matchingDoc[]" required="false" repeatable="true"/>
             <param name="start" required="false" as="positiveInteger" default="1"/>
             <param name="length" required="false" as="positiveInteger" default="1"/>
         </http>
         <http method="POST">
-            <param name="name" required="true"/>
             <param name="description" required="false"/>
             <param name="stringQuery" required="false"/>
             <param name="structuredQuery" required="false"/>
@@ -167,28 +167,20 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
             <param name="property" alias="property[]" repeatable="true" required="false"/>
             <param name="permission" alias="permission[]" repeatable="true" required="false"/>
         </http>
-        <http method="DELETE">
-            <param name="name" required="true"/>
-        </http>
+        <http method="DELETE"/>
     </request>
 
 
     <!-- Index management -->
 
-    <request uri="^/manage/?$" endpoint="/corona/manage/summary.xqy" user-params="ignore">
+    <request uri="^/manage/?$" endpoint="/corona/manage/summary.xqy" user-params="allow">
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
 		</http>
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/?$" endpoint="/corona/manage/state.xqy">
-        <http method="POST">
-            <param name="isManaged" as="boolean" required="false"/>
-        </http>
-    </request>
-
-    <request uri="^/manage/(ranges|range/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/range.xqy">
+    <request uri="^/manage/(ranges|range/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/range.xqy" user-params="allow">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
@@ -203,7 +195,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/(bucketedranges|bucketedrange/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/bucketedrange.xqy">
+    <request uri="^/manage/(bucketedranges|bucketedrange/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/bucketedrange.xqy" user-params="allow">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
@@ -225,7 +217,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/(geospatials|geospatial/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/geo.xqy">
+    <request uri="^/manage/(geospatials|geospatial/([A-Za-z0-9_-]+))/?$" endpoint="/corona/manage/geo.xqy" user-params="allow">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
@@ -247,7 +239,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/(namespaces|namespace/([^/]+))/?$" endpoint="/corona/manage/namespace.xqy">
+    <request uri="^/manage/(namespaces|namespace/([^/]+))/?$" endpoint="/corona/manage/namespace.xqy" user-params="allow">
         <uri-param name="prefix" as="string">$2</uri-param>
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
@@ -258,7 +250,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/(transformers|transformer/([^/]+))/?$" endpoint="/corona/manage/transformer.xqy">
+    <request uri="^/manage/(transformers|transformer/([^/]+))/?$" endpoint="/corona/manage/transformer.xqy" user-params="allow">
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
 			<param name="outputFormat" required="false" values="json|xml" default="json"/>
@@ -267,7 +259,7 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         <http method="DELETE"/>
     </request>
 
-    <request uri="^/manage/(place|places|place/([^/]+))/?$" endpoint="/corona/manage/places.xqy">
+    <request uri="^/manage/(place|places|place/([^/]+))/?$" endpoint="/corona/manage/places.xqy" user-params="allow">
         <uri-param name="scope" as="string">$1</uri-param>
         <uri-param name="name" as="string">$2</uri-param>
         <http method="GET">
@@ -293,18 +285,47 @@ declare variable $endpoints:ENDPOINTS as element(rest:options) :=
         </http>
     </request>
 
+    <request uri="^/manage/(namedqueryprefixes|namedqueryprefix/([^/]+))/?$" endpoint="/corona/manage/namedqueryprefix.xqy" user-params="allow">
+        <uri-param name="prefix" as="string">$2</uri-param>
+        <http method="GET"/>
+        <http method="POST"/>
+        <http method="DELETE"/>
+    </request>
+
+    <!-- Schema management -->
+    <request uri="^/manage/(schemas|schema)/?$" endpoint="/corona/manage/schemas.xqy" user-params="allow">
+        <param name="uri" required="false"/>
+        <http method="GET"/>
+        <http method="PUT"/>
+        <http method="DELETE"/>
+    </request>
+
+    <!-- Environment variables -->
+    <request uri="^/manage/(env|env/([^/]+))/?$" endpoint="/corona/manage/env.xqy" user-params="allow">
+        <uri-param name="name" as="string">$2</uri-param>
+        <http method="GET"/>
+        <http method="POST">
+            <param name="value" required="true"/>
+	    </http>
+        <http method="DELETE"/>
+    </request>
+
+    <request uri="^/config/?$" endpoint="/config/site/index.xqy" user-params="allow"/>
+    <request uri="^/config/search/?$" endpoint="/config/site/search.xqy" user-params="allow"/>
+    <request uri="^/config/namespaces/?$" endpoint="/config/site/namespaces.xqy" user-params="allow"/>
+    <request uri="^/config/transformers/?$" endpoint="/config/site/transformers.xqy" user-params="allow"/>
+    <request uri="^/config/env/?$" endpoint="/config/site/env.xqy" user-params="allow"/>
+	
     <request uri="^/config/setup/?$" endpoint="/config/setup.xqy" user-params="allow">
         <http method="GET"/>
         <http method="POST"/>
     </request>
 
-    <request uri="^/wadl/?$" endpoint="/config/wadl.xqy">
-        <http method="GET"/>
-    </request>
-
-    <request uri="^/soapui/?$" endpoint="/config/soapui.xqy">
-        <http method="GET"/>
-    </request>
+    <request uri="^/config/explore/?$" endpoint="/config/explore.xqy" user-params="allow">
+        <param name="page" as="integer" required="false" default="1"/>
+	</request>
+    <request uri="^/config/wadl/?$" endpoint="/config/wadl.xqy" user-params="allow"/>
+    <request uri="^/config/soapui/?$" endpoint="/config/soapui.xqy" user-params="allow"/>
 
 </options>;
 
@@ -319,5 +340,16 @@ declare function endpoints:request(
 	$method as xs:string
 ) as element(rest:request)?
 {
-    ($ENDPOINTS/rest:request[@endpoint = $module][(empty(rest:http) and ($method eq 'GET')) or ($method eq rest:http/@method)])[1]
+	let $uri := rest:original-request-url()
+	let $log := xdmp:log($uri)
+	return
+	rest:matching-request(
+		<options xmlns="http://marklogic.com/appservices/rest">{
+			$ENDPOINTS/rest:request[@endpoint = $module][(empty(rest:http) and ($method eq 'GET')) or ($method = rest:http/@method)]
+		}</options>,
+		$uri,
+		$method,
+		(),
+		()
+	)
 };

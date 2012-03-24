@@ -30,7 +30,7 @@ import module namespace endpoints="http://marklogic.com/corona/endpoints" at "/c
 declare option xdmp:mapping "false";
 
 let $requestMethod := xdmp:get-request-method()
-let $params := rest:process-request(endpoints:request("/corona/kvquery.xqy"), $requestMethod)
+let $params := rest:process-request(endpoints:request("/corona/kvquery.xqy", $requestMethod))
 
 
 let $key := map:get($params, "key")
@@ -109,6 +109,8 @@ let $query := cts:and-query((
     return cts:directory-query($directory)
 ))
 
+let $log := common:log("Key/Value Query", "Generated query", $query)
+
 let $end := $start + $length - 1
 
 let $results := cts:search(doc(), $query)[$start to $end]
@@ -125,7 +127,7 @@ let $end :=
 
 let $results :=
     try {
-        store:outputMultipleDocuments($results, $start, $end, $total, $include, $query, $extractPath, $applyTransform, $outputFormat)
+        store:outputMultipleDocuments($results, $start, $end, $total, $include, $query, $extractPath, $applyTransform, $params, $outputFormat)
     }
     catch ($e) {
         xdmp:set($errors, common:errorFromException($e, $outputFormat))

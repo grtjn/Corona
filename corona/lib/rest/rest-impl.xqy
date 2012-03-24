@@ -31,7 +31,6 @@ declare variable $rest-impl:REPEATEDPARAM     := xs:QName("rest:REPEATEDPARAM");
 declare variable $rest-impl:REQUIREDPARAM     := xs:QName("rest:REQUIREDPARAM");
 declare variable $rest-impl:INVALIDCONDITION  := xs:QName("rest:INVALIDCONDITION");
 declare variable $rest-impl:FAILEDCONDITION   := xs:QName("rest:FAILEDCONDITION");
-
 declare variable $rest-impl:NOMATCHINGREQUEST := xs:QName("rest:NOMATCHINGREQUEST");
 
 (: ====================================================================== :)
@@ -44,9 +43,9 @@ declare variable $rest-impl:NOMATCHINGREQUEST := xs:QName("rest:NOMATCHINGREQUES
 declare variable $rest-impl:DEBUG as xs:boolean := false();
 
 declare function rest-impl:log($msgs as item()*) as empty-sequence() {
-  if ($rest-impl:DEBUG)
-  then for $msg in $msgs return xdmp:log($msg)
-  else ()
+    if ($rest-impl:DEBUG)
+    then for $msg in $msgs return xdmp:log($msg)
+    else ()
 };
 
 declare function rest-impl:check-reqenv(
@@ -92,6 +91,11 @@ declare function rest-impl:dump-map(
 
 (: ====================================================================== :)
 
+declare function rest-impl:original-request-url() as xs:string
+{
+  xdmp:get-request-field("rest:original-request-url", xdmp:get-request-url())
+};
+
 declare function rest-impl:rewrite(
   $requests as element(rest:request)*,
   $reqenv as map:map
@@ -101,14 +105,16 @@ declare function rest-impl:rewrite(
   let $matches   := rest-impl:matching-request($requests, $reqenv)
   let $request   := $matches[1]
   let $params    := $matches[2]
+  let $defparams := $matches[3]
   let $endpoint  := $request/@endpoint/string()
   let $uri       := map:get($reqenv, "uri")
 
   (: Ok. Now the tricky bit is that we need to add the uri-param parameters to the
      rewritten request URI without disturbing the actual parameters that might have
-     been passed there. But, there's one more wrinkle. If there's a parameter that
+     been passed there. But, there's a wrinkle: if there's a parameter that
      is *both* a URI param and is passed on the URI, we need to make sure that we
-     don't duplicate it.
+     don't duplicate it. And another wrinkle: we want to make defaulted parameters
+     explicit in order to make the endpoint's job easier.
   :)
 
   let $uriparams
@@ -123,7 +129,16 @@ declare function rest-impl:rewrite(
        return
          $param
 
-  let $eparam   := string-join(($reqparams, $uriparams), "&amp;")
+  let $addparams
+    := if (empty($defparams))
+       then ()
+       else
+         for $name in map:keys($defparams)
+         for $value in map:get($defparams, $name)
+         return
+           concat($name, "=", $value)
+
+  let $eparam   := string-join(($reqparams, $uriparams, $addparams, concat("rest:original-request-url=", xdmp:get-request-url())), "&amp;")
   let $sep      := if (contains($endpoint,"?")) then "&amp;" else "?"
   let $result
     := if (empty($endpoint))
@@ -132,7 +147,7 @@ declare function rest-impl:rewrite(
        else
          concat($endpoint,
                 if ($eparam = "") then "" else concat($sep, $eparam))
-  let $trace := xdmp:log(concat($uri, " => ", $result))
+  let $trace := rest-impl:log(concat($uri, " => ", $result))
   return
     $result
 };
@@ -140,23 +155,12 @@ declare function rest-impl:rewrite(
 declare function rest-impl:matching-request(
   $requests as element(rest:request)*,
   $reqenv as map:map
-) (: returns a sequence of (req:request, map:map) or the empty sequence :)
+) (: returns a sequence of (req:request, map:map, map:map) or the empty sequence :)
 {
   if (empty($requests))
   then
     rest-impl:log("Out of requests: rewrite returns empty sequence")
   else
-(:
-    let $trace   := rest-impl:log(("==> Matches request:", $requests[1]))
-    let $matches := rest-impl:matches($requests[1], $reqenv, false(), false())
-    let $trace   := rest-impl:log((concat("==> ",exists($matches)),""))
-    return
-      if (exists($matches))
-      then
-        ($requests[1], $matches)
-      else
-        rest-impl:matching-request($requests[position()>1], $reqenv)
-:)
     let $matches := (
 		for $request in $requests
 		let $trace   := rest-impl:log(("==> Matches request:", $request))
@@ -178,7 +182,7 @@ declare function rest-impl:matching-request(
     return
 	  if (exists($matches))
 	  then
-        ($matches[1]/*[1], map:map($matches[1]/*[2]))
+        ($matches[1]/*[1], map:map($matches[1]/*[2]), map:map($matches[1]/*[3]))
 	  else
 		let $mime-errors := $errors[contains(error:error/error:name, string($rest-impl:UNACCEPTABLETYPE))]
 		let $extra-param-errors := $errors[contains(error:error/error:name, string($rest-impl:UNSUPPORTEDPARAM))]
@@ -217,13 +221,12 @@ declare function rest-impl:matching-request(
 
 (: ====================================================================== :)
 
-(: Returns true if and only if the actual $request matches the $reqenv :)
 declare private function rest-impl:matches(
   $request as element(rest:request),
   $reqenv as map:map,
   $raise-errors as xs:boolean,
   $process-request as xs:boolean
-) as map:map?
+) as map:map*
 {
   let $uri    := map:get($reqenv, "uri")
   let $uri    := if (contains($uri,"?")) then substring-before($uri, "?") else $uri
@@ -232,14 +235,16 @@ declare private function rest-impl:matches(
     if (($process-request or rest-impl:uri-matches($request, $uri, $raise-errors))
         and rest-impl:method-matches($request, $method, $raise-errors))
     then
-      let $uri-ok   := $process-request or rest-impl:uri-params-ok($request, $reqenv, $raise-errors)
-      let $params   := rest-impl:params($request, $reqenv, $process-request)
-      let $match-ok := rest-impl:params-match($request, $reqenv, $params, $raise-errors)
-      let $cond-ok  := rest-impl:conditions-match($request, $reqenv, $raise-errors)
+      let $uri-ok    := $process-request or rest-impl:uri-params-ok($request, $reqenv, $raise-errors)
+      let $plist     := rest-impl:params($request, $reqenv, $process-request)
+      let $params    := $plist[1]
+      let $defparams := $plist[2]
+      let $match-ok  := rest-impl:params-match($request, $reqenv, $params, $raise-errors)
+      let $cond-ok   := rest-impl:conditions-match($request, $reqenv, $raise-errors)
       return
         if ($uri-ok and $match-ok and $cond-ok)
         then
-          $params
+          ($params, $defparams)
         else
           ()
     else
@@ -336,7 +341,7 @@ declare function rest-impl:params(
   $request as element(rest:request),
   $reqenv as map:map,
   $process-request as xs:boolean
-) as map:map
+) as map:map+
 {
   let $uri    := map:get($reqenv, "uri")
   let $uri    := if (contains($uri,"?")) then substring-before($uri, "?") else $uri
@@ -350,6 +355,7 @@ declare function rest-impl:params(
                           $request/parent::rest:options/@user-params)[1])
 
   let $map := map:map()
+  let $defmap := map:map()
 
   (: Add the uri-param parameters to the map. If we're processing a request, then the
      rewriter will already have put the uri-params in the user-params during the
@@ -374,7 +380,8 @@ declare function rest-impl:params(
                                   then
                                     if ($param/@default)
                                     then
-                                      string($param/@default)
+                                      (map:put($defmap, $name, string($param/@default)),
+                                       string($param/@default))
                                     else
                                       ()
                                   else $uvalue
@@ -414,7 +421,7 @@ declare function rest-impl:params(
               return
                 map:put($map, $aname, $values)
   return
-    $map
+    ($map,$defmap)
 };
 
 declare private function rest-impl:param-alias(
@@ -499,9 +506,6 @@ as xs:boolean
 };
 
 (: ====================================================================== :)
-(: ====================================================================== :)
-(: ====================================================================== :)
-
 
 declare function rest-impl:conditions(
   $elem as element()*)
@@ -772,7 +776,7 @@ declare function rest-impl:process-request(
 {
   let $trace   := rest-impl:log("processing request")
   let $trace   := rest-impl:dump-reqenv($reqenv)
-  let $matches := rest-impl:matches($request, $reqenv, true(), true())
+  let $matches := rest-impl:matches($request, $reqenv, true(), true())[1]
   return
     (: $matches must be a map rest-impl:matches would have raised an error :)
     rest-impl:typed-params($request, $reqenv, $matches)
@@ -965,6 +969,26 @@ as xs:boolean
   let $trace := rest-impl:log(concat("Accept: ", $condition, ": ", $pass))
   return
     $pass
+};
+
+(: ====================================================================== :)
+
+declare function rest-impl:request-environment()
+as map:map
+{
+  let $params := map:map()
+  let $_ := for $name in xdmp:get-request-field-names()
+            return
+              map:put($params, $name, xdmp:get-request-field($name))
+
+  let $reqenv := map:map()
+  let $_       := map:put($reqenv, "uri", xdmp:get-request-url())
+  let $_       := map:put($reqenv, "method", xdmp:get-request-method())
+  let $_       := map:put($reqenv, "accept", xdmp:get-request-header("Accept"))
+  let $_       := map:put($reqenv, "user-agent", xdmp:get-request-header("User-Agent"))
+  let $_       := map:put($reqenv, "params", $params)
+  return
+    $reqenv
 };
 
 (: ====================================================================== :)

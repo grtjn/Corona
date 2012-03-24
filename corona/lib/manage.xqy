@@ -24,23 +24,145 @@ import module namespace common="http://marklogic.com/corona/common" at "common.x
 import module namespace const="http://marklogic.com/corona/constants" at "constants.xqy";
 import module namespace admin = "http://marklogic.com/xdmp/admin" at "/MarkLogic/admin.xqy";
 import module namespace prop="http://xqdev.com/prop" at "properties.xqy";
+import module namespace search="http://marklogic.com/corona/search" at "search.xqy";
 
 declare namespace corona="http://marklogic.com/corona";
 declare namespace db="http://marklogic.com/xdmp/database";
 declare default function namespace "http://www.w3.org/2005/xpath-functions";
 
-declare function manage:setManaged(
-    $isManaged as xs:boolean
+
+(: Environment variables :)
+declare function manage:getEnvVar(
+    $name as xs:string
+) as xs:string?
+{
+    manage:getEnvVar($name, ())
+};
+
+declare function manage:getEnvVar(
+    $name as xs:string,
+    $default as xs:string?
+) as xs:string?
+{
+    (prop:get(concat("corona-env-", $name)), $default)[1]
+};
+
+declare function manage:getEnvVars(
+) as element(json:item)
+{
+    json:object((
+        for $prop in prop:all()
+        where starts-with($prop, "corona-env-")
+        return (replace($prop, "^corona-env-", ""), prop:get($prop))
+    ))
+};
+
+declare function manage:setEnvVar(
+    $name as xs:string,
+    $value as xs:string
 ) as empty-sequence()
 {
-    prop:set("isManaged", $isManaged, true())
+    prop:set(concat("corona-env-", $name), $value, true())
 };
+
+declare function manage:deleteEnvVar(
+    $name as xs:string
+) as empty-sequence()
+{
+    prop:delete(concat("corona-env-", $name))
+};
+
 
 declare function manage:isManaged(
 ) as xs:boolean
 {
-    (prop:get("isManaged"), true())[1]
+    xs:boolean(manage:getEnvVar("isManaged", "true"))
 };
+
+declare function manage:insertTransformsEnabled(
+) as xs:boolean
+{
+    let $value := manage:getEnvVar("devInsertTransformsEnabled", "true")
+    return
+        if($value castable as xs:boolean)
+        then xs:boolean($value)
+        else true()
+};
+
+declare function manage:fetchTransformsEnabled(
+) as xs:boolean
+{
+    let $value := manage:getEnvVar("devFetchTransformsEnabled", "true")
+    return
+        if($value castable as xs:boolean)
+        then xs:boolean($value)
+        else true()
+};
+
+declare function manage:defaultOutputFormat(
+) as xs:string
+{
+    let $value := manage:getEnvVar("defaultOutputFormat", "json")
+    return
+        if($value = ("xml", "json"))
+        then $value
+        else "json"
+};
+
+declare function manage:getDebugLogging(
+) as xs:boolean
+{
+    let $value := manage:getEnvVar("DEBUG", "false")
+    return
+        if($value castable as xs:boolean)
+        then xs:boolean($value)
+        else false()
+};
+
+
+
+(: Named query prefixes :)
+declare function manage:addNamedQueryPrefix(
+    $prefix as xs:string
+) as empty-sequence()
+{
+    let $test := manage:validateIndexName($prefix)
+    return config:addNamedQueryPrefix($prefix)
+};
+
+declare function manage:removeNamedQueryPrefix(
+    $prefix as xs:string
+) as empty-sequence()
+{
+    for $i in search:storedQueriesWithPrefix($prefix)
+    return xdmp:document-delete(base-uri($i))
+    ,
+    config:delete($prefix)
+};
+
+declare function manage:namedQueryPrefixExists(
+    $prefix as xs:string
+) as xs:boolean
+{
+    let $config := config:get($prefix)
+    return exists($config) and $config/@type = "namedQueryPrefix"
+};
+
+declare function manage:validateNamedQueryPrefix(
+    $prefix as xs:string
+) as empty-sequence()
+{
+    if(not(manage:namedQueryPrefixExists($prefix)))
+    then error(xs:QName("corona:INVALID-NAMED-QUERY-PREFIX"), concat("There is no named query prefix of '", $prefix, "'"))
+    else ()
+};
+
+declare function manage:getNamedQueryPrefixes(
+) as xs:string*
+{
+    config:prefixes()
+};
+
 
 (: Ranges :)
 declare function manage:createJSONRange(
@@ -1143,10 +1265,10 @@ declare function manage:setTransformer(
     else
         let $test :=
             try {
-                xdmp:eval($transformer, (xs:QName("content"), <foo/>), <options xmlns="xdmp:eval"><isolation>same-statement</isolation></options>)
+                xdmp:eval($transformer, (xs:QName("content"), <foo/>, xs:QName("requestParameters"), map:map(), xs:QName("testMode"), true()), <options xmlns="xdmp:eval"><isolation>same-statement</isolation></options>)
             }
             catch ($e) {
-                error(xs:QName("corona:INVALID-TRANSFORMER"), "Invalid transformer: XQuery evaluation error")
+                error(xs:QName("corona:INVALID-TRANSFORMER"), concat("Invalid transformer: XQuery evaluation error: ", xdmp:quote($e)))
             }
         return xdmp:document-insert(concat("_/transformers/", $name), text { $transformer }, (xdmp:default-permissions(), xdmp:permission($const:TransformerReadRole, "read")), $const:TransformersCollection)
 };
@@ -1167,11 +1289,28 @@ declare function manage:getTransformer(
     doc(concat("_/transformers/", $name))
 };
 
+declare function manage:getTransformerType(
+    $name as xs:string
+) as xs:string?
+{
+    let $transformer := manage:getTransformer($name)
+    return
+        if(exists($transformer/*))
+        then "xslt"
+        else if(exists($transformer/text()))
+        then "xquery"
+        else ()
+};
+
 declare function manage:getAllTransformerNames(
-) as xs:string*
+) as element(json:item)*
 {
     for $transformer in collection($const:TransformersCollection)
-    return tokenize(base-uri($transformer), "/")[last()]
+    let $name := tokenize(base-uri($transformer), "/")[last()]
+    return json:object((
+        "name", $name,
+        "type", manage:getTransformerType($name)
+    ))
 };
 
 declare function manage:deleteAllTransformers(
@@ -1179,6 +1318,93 @@ declare function manage:deleteAllTransformers(
 {
     for $transformer in collection($const:TransformersCollection)
     return xdmp:document-delete(base-uri($transformer))
+};
+
+
+(: Schemas :)
+declare function manage:setSchema(
+    $uri as xs:string,
+    $schema as element(xs:schema)
+) as empty-sequence()
+{
+    xdmp:eval("
+        declare variable $uri as xs:string external;
+        declare variable $schema as element(xs:schema) external;
+
+        xdmp:document-insert($uri, $schema)
+        ",
+        (
+            xs:QName("uri"), $uri,
+            xs:QName("schema"), $schema
+        ),
+        <options xmlns="xdmp:eval">
+            <database>{ xdmp:schema-database() }</database>
+        </options>
+    )
+};
+
+declare function manage:deleteSchema(
+    $uri as xs:string
+) as empty-sequence()
+{
+    xdmp:eval("
+        declare variable $uri as xs:string external;
+
+        xdmp:document-delete($uri)
+        ",
+        (
+            xs:QName("uri"), $uri
+        ),
+        <options xmlns="xdmp:eval">
+            <database>{ xdmp:schema-database() }</database>
+        </options>
+    )
+};
+
+declare function manage:getSchema(
+    $uri as xs:string
+) as element(xs:schema)?
+{
+    xdmp:eval("
+        declare variable $uri as xs:string external;
+
+        doc($uri)/xs:schema
+        ",
+        (
+            xs:QName("uri"), $uri
+        ),
+        <options xmlns="xdmp:eval">
+            <database>{ xdmp:schema-database() }</database>
+        </options>
+    )
+};
+
+declare function manage:getAllSchemaURIs(
+) as xs:string*
+{
+    xdmp:eval("
+        for $schema in /xs:schema
+        return base-uri($schema)
+        ",
+        (),
+        <options xmlns="xdmp:eval">
+            <database>{ xdmp:schema-database() }</database>
+        </options>
+    )
+};
+
+declare function manage:deleteAllSchemas(
+) as empty-sequence()
+{
+    xdmp:eval("
+        for $schema in /xs:schema
+        return xdmp:document-delete(base-uri($schema))
+        ",
+        (),
+        <options xmlns="xdmp:eval">
+            <database>{ xdmp:schema-database() }</database>
+        </options>
+    )
 };
 
 
@@ -1483,7 +1709,7 @@ declare private function manage:validateIndexName(
     if(not(matches($name, "^[0-9A-Za-z][0-9A-Za-z_-]*$")))
     then error(xs:QName("corona:INVALID-INDEX-NAME"), "Index names can only contain alphanumeric, dash and underscore characters")
     else if(exists(config:get($name)))
-    then error(xs:QName("corona:DUPLICATE-INDEX-NAME"), concat("An range index or place with the name '", $name, "' already exists"))
+    then error(xs:QName("corona:DUPLICATE-INDEX-NAME"), concat("A range index, place or named query prefix with the name '", $name, "' already exists"))
     else ()
 };
 
@@ -1681,24 +1907,28 @@ declare private function manage:createFieldForPlace(
         if(exists($existing))
         then admin:database-delete-field($dbConfig, $database, $fieldName)
         else $dbConfig
-    let $dbConfig := admin:database-add-field($dbConfig, $database, admin:database-field($fieldName, false()))
 
-    let $add :=
-        for $item in $config/query/field/*[@type = "include"]
-        let $nsLnBits :=
-            if(local-name($item) = "element")
-            then manage:getNSAndLN($item/@element)
-            else ("http://marklogic.com/json", json:escapeNCName($item/@key))
-        let $el := admin:database-included-element($nsLnBits[1], $nsLnBits[2], ($item/@weight, 1)[1], (), "", "")
-        return xdmp:set($dbConfig, admin:database-add-field-included-element($dbConfig, $database, $fieldName, $el))
-    let $add :=
-        for $item in $config/query/field/*[@type = "exclude"]
-        let $nsLnBits :=
-            if(local-name($item) = "element")
-            then manage:getNSAndLN($item/@element)
-            else ("http://marklogic.com/json", json:escapeNCName($item/@key))
-        let $el := admin:database-excluded-element($nsLnBits[1], $nsLnBits[2])
-        return xdmp:set($dbConfig, admin:database-add-field-excluded-element($dbConfig, $database, $fieldName, $el))
+    let $dbConfig :=
+        if(exists($config/query/field))
+        then admin:database-add-field($dbConfig, $database, admin:database-field($fieldName, false()))
+        else $dbConfig
+    return 
+        let $add :=
+            for $item in $config/query/field/*[@type = "include"]
+            let $nsLnBits :=
+                if(local-name($item) = "element")
+                then manage:getNSAndLN($item/@element)
+                else ("http://marklogic.com/json", json:escapeNCName($item/@key))
+            let $el := admin:database-included-element($nsLnBits[1], $nsLnBits[2], ($item/@weight, 1)[1], (), "", "")
+            return xdmp:set($dbConfig, admin:database-add-field-included-element($dbConfig, $database, $fieldName, $el))
+        let $add :=
+            for $item in $config/query/field/*[@type = "exclude"]
+            let $nsLnBits :=
+                if(local-name($item) = "element")
+                then manage:getNSAndLN($item/@element)
+                else ("http://marklogic.com/json", json:escapeNCName($item/@key))
+            let $el := admin:database-excluded-element($nsLnBits[1], $nsLnBits[2])
+            return xdmp:set($dbConfig, admin:database-add-field-excluded-element($dbConfig, $database, $fieldName, $el))
 
-    return admin:save-configuration($dbConfig)
+        return admin:save-configuration($dbConfig)
 };
